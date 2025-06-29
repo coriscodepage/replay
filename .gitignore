@@ -1,0 +1,6 @@
+/target
+a.out
+*.txt
+*.cpp
+*.data
+*.code-workspace
