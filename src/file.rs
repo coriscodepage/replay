@@ -1,6 +1,15 @@
-use std::{cmp::min, error::Error, fs::File, io::{self, Read, Seek}, mem::MaybeUninit, string::FromUtf8Error};
+use std::{
+    cmp::min,
+    error::Error,
+    fs::File,
+    io::{self, Read, Seek},
+    mem::MaybeUninit,
+    string::FromUtf8Error,
+};
 
 use snap::raw::Decoder;
+
+use crate::trace;
 
 #[derive(Debug, Clone)]
 pub struct Position {
@@ -119,9 +128,8 @@ impl SnappyFile {
             while size_to_read > 0 {
                 let chunk_size = min(self.cache.len() - self.cache_pos, size_to_read as usize);
                 let offset = len - size_to_read;
-                return_value[offset..offset + chunk_size].copy_from_slice(
-                    &self.cache[self.cache_pos..(chunk_size + self.cache_pos)],
-                );
+                return_value[offset..offset + chunk_size]
+                    .copy_from_slice(&self.cache[self.cache_pos..(chunk_size + self.cache_pos)]);
                 self.cache_pos += chunk_size;
                 size_to_read -= chunk_size;
                 if size_to_read > 0 {
@@ -174,6 +182,19 @@ impl SnappyFile {
         Ok(String::from_utf8(buffer)?)
     }
     pub fn get_current_offset(&mut self) -> Position {
-        Position { chunk_offset: self.chunk_offset, position_in_chunk: self.cache_pos }
+        Position {
+            chunk_offset: self.chunk_offset,
+            position_in_chunk: self.cache_pos,
+        }
+    }
+    pub fn read_signed_varint(&mut self) -> Result<i64, SnappyError> {
+        match self.read_type::<u8>() {
+            Ok(val) => match val {
+                n if trace::Type::TypeSint as u8 == n => Ok(-(self.read_varint()? as i64)),
+                n if trace::Type::TypeUint as u8 == n => Ok(self.read_varint()? as i64),
+                _=> panic!("Unexpected type")
+            },
+            Err(_) => Ok(0i64)
+        }
     }
 }

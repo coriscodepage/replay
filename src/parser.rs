@@ -1,4 +1,8 @@
-use std::{collections::HashMap, convert::TryFrom, error::Error};
+use std::{
+    collections::{HashMap, LinkedList, VecDeque},
+    convert::TryFrom,
+    error::Error,
+};
 
 use crate::{
     file::{SnappyError, SnappyFile},
@@ -62,7 +66,8 @@ pub struct Parser {
     pub api: API,
     pub properties: HashMap<String, String>,
     functions: Vec<Option<FunctionSignature>>,
-    call_index: usize,
+    call_number: usize,
+    call_list: VecDeque<Call>,
 }
 
 impl Parser {
@@ -82,7 +87,8 @@ impl Parser {
             api: API::ApiUnknown,
             properties: HashMap::new(),
             functions: Vec::new(),
-            call_index: 0,
+            call_number: 0,
+            call_list: VecDeque::new(),
         })
     }
 
@@ -103,36 +109,77 @@ impl Parser {
         Ok(())
     }
 
-    fn parse_call(&mut self) -> Result<Call, ParserError> {
-        match Event::try_from(self.snappy.read_type::<u8>()?).unwrap() {
-            Event::EventEnter => {
-                let thread_id = self.snappy.read_varint()?;
-                let signature = self.parse_function_sig()?;
-                let sig = self.parse_function_sig()?;
-                self.call_index = self.call_index + 1;
-                return Ok(Call {
-                    flag: sig.flag,
-                    sig: sig,
-                    index: self.call_index, //NOTE: this is a guess
-                    ret: None,
-                    args: Vec::new(),
-                });
-            }
-            Event::EventLeave => todo!(),
-        };
-    }
-
-    pub fn parse_call_detail(&mut self) -> Result<Option<()>, ParserError> {
+    pub fn parse_call(&mut self) -> Result<Call, ParserError> {
         loop {
             match self.snappy.read_type::<u8>() {
-                Err(_) => return Ok(None),
+                Ok(val) => match Event::try_from(val).unwrap() {
+                    Event::EventEnter => {
+                        let thread_id = self.snappy.read_varint()?;
+                        let sig = self.parse_function_sig()?;
+                        let mut call = Call {
+                            sig,
+                            number: self.call_number, //NOTE: this is a guess
+                            ret: None,
+                            args: Vec::new(),
+                            thread_id: thread_id as u16,
+                        };
+                        self.call_number = self.call_number + 1;
+                        if self.parse_call_detail(&mut call)? {
+                            self.call_list.push_back(call);
+                        }
+                    }
+                    Event::EventLeave => {
+                        let call_number = self.snappy.read_varint()?;
+                        let mut call: Option<Call> = None;
+                        for el in 0..self.call_list.len() {
+                            if self.call_list[el].number == call_number {
+                                call = self.call_list.remove(el);
+                            }
+                        }
+                        if call.is_none() {
+                            call = Some(Call::default());
+                            let _ = self.parse_call_detail(&mut call.as_mut().unwrap())?;
+                        } else if self.parse_call_detail(&mut call.as_mut().unwrap())? {
+                            //TODO Whole glErrr handling. Works without
+                            return Ok(call.unwrap());
+                        }
+                    }
+                },
+
+                Err(_) => {
+                    if !self.call_list.is_empty() {
+                        let call = self.call_list.front_mut().unwrap();
+                        call.sig.flag = Some(call.sig.flag.unwrap_or(0) | 64);
+                        let call = self.call_list.pop_front();
+                        //TODO Whole glErrr handling. Works without
+                        return Ok(call.unwrap());
+                    }
+                    return Err(ParserError::CallFormingError(CallError::NoCallAvailable));
+                }
+            }
+        }
+    }
+
+    pub fn parse_call_detail(&mut self, call: &mut Call) -> Result<bool, ParserError> {
+        loop {
+            match self.snappy.read_type::<u8>() {
+                Err(_) => return Ok(false),
                 Ok(val) => {
                     match val {
-                        n if trace::CallDetail::CallEnd as u8 == n => todo!(), //TODO return CALL
-                        n if trace::CallDetail::CallArg as u8 == n => todo!(), //TODO
-                        n if trace::CallDetail::CallRet as u8 == n => todo!(), //TODO
-                        n if trace::CallDetail::CallBacktrace as u8 == n => todo!(), //TODO
-                        n if trace::CallDetail::CallFlags as u8 == n => todo!(), //TODO
+                        n if trace::CallDetail::CallEnd as u8 == n => return Ok(true),
+                        n if trace::CallDetail::CallArg as u8 == n => {
+                            call.args = self.parse_arg()?
+                        }
+                        n if trace::CallDetail::CallRet as u8 == n => {
+                            call.ret = self.parse_value()?
+                        }
+                        n if trace::CallDetail::CallBacktrace as u8 == n => {} //TODO
+                        n if trace::CallDetail::CallFlags as u8 == n => {
+                            let flag = self.snappy.read_varint()?;
+                            if flag & 1 == 1 {
+                                call.sig.flag = Some(call.sig.flag.unwrap_or(0) | 1);
+                            }
+                        }
                         _ => panic!("Unknown call detail"),
                     }
                 }
@@ -140,8 +187,19 @@ impl Parser {
         }
     }
 
+    fn parse_arg(&mut self) -> Result<Vec<Box<dyn Value>>, ParserError> {
+        let index = self.snappy.read_varint()?;
+        let mut v_args = Vec::<Box<dyn Value>>::new();
+        if let Some(val) = self.parse_value()? {
+            if index >= v_args.len() {
+                v_args.resize_with(v_args.len() + index + 1, || {Box::new(value_structure::None{})});
+            }
+            v_args[index] = val;
+        };
+        Ok(v_args)
+    }
+
     fn parse_value(&mut self) -> Result<Option<Box<dyn Value>>, ParserError> {
-        let mut return_value: Option<Box<dyn Value>> = None;
         match self.snappy.read_type::<u8>() {
             Err(_) => return Err(ParserError::SnappyError(SnappyError::InsufficientData)),
             Ok(val) => match val {
@@ -149,18 +207,66 @@ impl Parser {
                     return Ok(Some(Box::new(value_structure::None {})))
                 }
                 n if trace::Type::TypeFalse as u8 == n => {
-                    return Ok(Some(Box::new(value_structure::Bool{value: false})))
+                    return Ok(Some(Box::new(value_structure::Bool { value: false })))
                 }
                 n if trace::Type::TypeTrue as u8 == n => {
-                    return Ok(Some(Box::new(value_structure::Bool{value: true})))
+                    return Ok(Some(Box::new(value_structure::Bool { value: true })))
                 }
+                n if trace::Type::TypeSint as u8 == n => {
+                    return Ok(Some(Box::new(value_structure::I64 {
+                        value: -(self.snappy.read_varint()? as i64),
+                    })))
+                }
+                n if trace::Type::TypeUint as u8 == n => {
+                    return Ok(Some(Box::new(value_structure::Usize {
+                        value: self.snappy.read_varint()?,
+                    })))
+                }
+                n if trace::Type::TypeFloat as u8 == n => {
+                    return Ok(Some(Box::new(value_structure::Float {
+                        value: self.snappy.read_type::<f32>()?,
+                    })))
+                }
+                n if trace::Type::TypeDouble as u8 == n => {
+                    return Ok(Some(Box::new(value_structure::Double {
+                        value: self.snappy.read_type::<f64>()?,
+                    })))
+                }
+                n if trace::Type::TypeString as u8 == n => {
+                    return Ok(Some(Box::new(value_structure::VString {
+                        value: self.snappy.read_string()?,
+                    })))
+                }
+                n if trace::Type::TypeEnum as u8 == n => {
+                    let enum_signature = todo!();
+                    let value = self.snappy.read_signed_varint()?;
+                },
+                n if trace::Type::TypeBitmask as u8 == n => todo!(),
+                n if trace::Type::TypeArray as u8 == n => {
+                    let len = self.snappy.read_varint()?;
+                    let mut arr = value_structure::Array{ values: Vec::new() };
+                    arr.values.resize_with(len, || {Box::new(value_structure::None{})});
+                    for i in 0..len {
+                        arr.values[i] = self.parse_value().unwrap().unwrap();
+                    }
+                    return Ok(Some(Box::new(arr)));
+                },
+                n if trace::Type::TypeStruct as u8 == n => todo!(),
+                n if trace::Type::TypeBlob as u8 == n => todo!(),
+                n if trace::Type::TypeOpaque as u8 == n => {
+                    return Ok(Some(Box::new(value_structure::Pointer {
+                        value: self.snappy.read_varint()? as *mut std::ffi::c_void,
+                    })))
+                },
+                n if trace::Type::TypeRepr as u8 == n => todo!(),
+                n if trace::Type::TypeWstring as u8 == n => todo!(),
+
                 _ => panic!("Unknown type"),
             },
         }
-        Err(ParserError::VersionMismatch)
     }
 
-    pub fn parse_function_sig(&mut self) -> Result<FunctionSignature, ParserError> {
+    fn parse_function_sig(&mut self) -> Result<FunctionSignature, ParserError> {
         let id = self.snappy.read_varint()?;
         if id > self.functions.len() {
             self.functions.resize(id + 1, None);
@@ -207,5 +313,9 @@ impl Parser {
         self.functions[id] = Some(sig.clone());
         // TODO: gl error sig
         Ok(sig)
+    }
+
+    fn parse_enum_sig(&mut self) {
+        
     }
 }

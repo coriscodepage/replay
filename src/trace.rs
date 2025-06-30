@@ -95,8 +95,8 @@ impl From<file::SnappyError> for FunctionSignatureError {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct FunctionSignature {
+#[derive(Debug, Clone, Default)]
+pub(crate) struct FunctionSignature {
     pub id: usize,
     pub name: String,
     pub num_args: usize,
@@ -105,12 +105,26 @@ pub struct FunctionSignature {
     pub state: Option<file::Position>
 }
 
+#[derive(Debug)]
+pub(crate) struct EnumValue {
+    name: &'static str,
+    value: i64,
+}
+
+#[derive(Debug)]
+pub(crate) struct EnumSig {
+    id: usize,
+    num_values: usize,
+    values: EnumValue,
+}
+
+#[derive(Default, Debug)]
 pub struct Call {
     pub sig: FunctionSignature,
-    pub flag: Option<u16>,
-    pub index: usize,
+    pub number: usize,
     pub ret: Option<Box<dyn Value>>,
     pub args: Vec<Box<dyn Value>>,
+    pub thread_id: u16,
 }
 
 enum CallFlags {
@@ -157,6 +171,8 @@ impl BitOr for CallFlags {
 pub enum CallError {
     RegexError,
     ConversionError(&'static str),
+    NoDetailsParsed,
+    NoCallAvailable,
 }
 
 impl Display for CallError {

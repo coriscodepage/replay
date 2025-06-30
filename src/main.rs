@@ -1,6 +1,6 @@
+extern crate regex;
 extern crate sdl3;
 extern crate snap;
-extern crate regex;
 
 mod file;
 mod parser;
@@ -12,7 +12,6 @@ use sdl3::video::{SwapInterval, Window};
 use sdl3::{EventPump, Sdl};
 use std::error::Error;
 use std::ffi::c_void;
-
 
 use crate::parser::Parser;
 
@@ -61,11 +60,16 @@ impl SdlContext {
 pub fn main() {
     let mut parser = Parser::new("../apitrace/hl2.trace").unwrap();
     parser.parse_properties().unwrap();
-    let _ = parser.snappy.read_type::<u8>().unwrap();
-    let _ = parser.snappy.read_varint().unwrap();
-    println!("{:?} | derived API: {:?}", parser.parse_function_sig().unwrap(), parser.api);
-    let _ = parser.snappy.read_type::<u8>().unwrap();
-    let _ = parser.snappy.read_varint().unwrap();
-    println!("{:?} | derived API: {:?}", parser.parse_function_sig().unwrap(), parser.api);
-
+    for _ in 0..500 {
+        let call = parser.parse_call().unwrap();
+        println!("Parsed call: {:?}", call);
+    }
+    /*parser.parse_properties().unwrap();
+        let _ = parser.snappy.read_type::<u8>().unwrap();
+        let _ = parser.snappy.read_varint().unwrap();
+        println!("{:?} | derived API: {:?}", parser.parse_function_sig().unwrap(), parser.api);
+        let _ = parser.snappy.read_type::<u8>().unwrap();
+        let _ = parser.snappy.read_varint().unwrap();
+        println!("{:?} | derived API: {:?}", parser.parse_function_sig().unwrap(), parser.api);
+    */
 }

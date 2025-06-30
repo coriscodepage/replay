@@ -1,4 +1,8 @@
-pub trait Value {
+use std::{fmt::Debug, os::raw::c_void};
+
+use crate::trace;
+
+pub trait Value: Debug {
     fn to_bool(&self) -> Option<bool>;
     fn to_usize(&self) -> Option<usize>;
     fn to_i64(&self) -> Option<i64>;
@@ -6,6 +10,7 @@ pub trait Value {
     fn to_f64(&self) -> Option<f64>;
 }
 
+#[derive(Debug)]
 pub struct None {}
 
 impl Value for None {
@@ -26,6 +31,7 @@ impl Value for None {
     }
 }
 
+#[derive(Debug)]
 pub struct Bool {
     pub value: bool,
 }
@@ -60,8 +66,9 @@ impl Value for Bool {
     }
 }
 
+#[derive(Debug)]
 pub struct Usize {
-    value: usize,
+    pub value: usize,
 }
 
 impl Value for Usize {
@@ -82,8 +89,9 @@ impl Value for Usize {
     }
 }
 
+#[derive(Debug)]
 pub struct I64 {
-    value: i64,
+    pub value: i64,
 }
 
 impl Value for I64 {
@@ -107,8 +115,9 @@ impl Value for I64 {
     }
 }
 
+#[derive(Debug)]
 pub struct Float {
-    value: f32,
+    pub value: f32,
 }
 
 impl Value for Float {
@@ -129,8 +138,9 @@ impl Value for Float {
     }
 }
 
+#[derive(Debug)]
 pub struct Double {
-    value: f64,
+    pub value: f64,
 }
 
 impl Value for Double {
@@ -148,5 +158,104 @@ impl Value for Double {
     }
     fn to_f64(&self) -> Option<f64> {
         Some(self.value)
+    }
+}
+
+#[derive(Debug)]
+pub struct VString {
+    pub value: String
+}
+
+impl Value for VString {
+    fn to_bool(&self) -> Option<bool> {
+        Some(true)
+    }
+    fn to_usize(&self) -> Option<usize> {
+        None
+    }
+    fn to_f32(&self) -> Option<f32> {
+        None
+    }
+    fn to_f64(&self) -> Option<f64> {
+        None
+    }
+    fn to_i64(&self) -> Option<i64> {
+        None
+    }
+}
+
+#[derive(Debug)]
+pub struct Pointer {
+    pub value: *mut c_void,
+}
+
+impl Value for Pointer {
+    fn to_bool(&self) -> Option<bool> {
+        todo!()
+    }
+    fn to_usize(&self) -> Option<usize> {
+        todo!()
+    }
+    fn to_f32(&self) -> Option<f32> {
+        todo!()
+    }
+    fn to_f64(&self) -> Option<f64> {
+        todo!()
+    }
+    fn to_i64(&self) -> Option<i64> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
+pub struct Array {
+    pub values: Vec<Box<dyn Value>>,
+}
+
+impl Value for Array {
+    fn to_bool(&self) -> Option<bool> {
+        todo!()
+    }
+    fn to_usize(&self) -> Option<usize> {
+        todo!()
+    }
+    fn to_f32(&self) -> Option<f32> {
+        todo!()
+    }
+    fn to_f64(&self) -> Option<f64> {
+        todo!()
+    }
+    fn to_i64(&self) -> Option<i64> {
+        todo!()
+    }
+}
+
+impl Array {
+    fn size(&self) -> usize {
+        self.values.len()
+    }
+}
+
+#[derive(Debug)]
+pub struct Enum {
+    sig: trace::EnumSig,
+    value: i64,
+}
+
+impl Value for Enum {
+        fn to_bool(&self) -> Option<bool> {
+        todo!()
+    }
+    fn to_usize(&self) -> Option<usize> {
+        todo!()
+    }
+    fn to_f32(&self) -> Option<f32> {
+        todo!()
+    }
+    fn to_f64(&self) -> Option<f64> {
+        todo!()
+    }
+    fn to_i64(&self) -> Option<i64> {
+        todo!()
     }
 }
