@@ -7,12 +7,13 @@ use regex::Regex;
 
 use crate::file;
 use crate::parser;
-use crate::value_structure::value;
+use crate::value_structure::Value;
 
 pub enum Event {
     EventEnter,
     EventLeave,
 }
+
 
 impl TryFrom<u8> for Event {
     type Error = &'static str;
@@ -28,7 +29,7 @@ impl TryFrom<u8> for Event {
 
 #[repr(C)]
 #[allow(dead_code)]
-enum CallDetail {
+pub enum CallDetail {
     CallEnd = 0,
     CallArg,
     CallRet,
@@ -39,7 +40,7 @@ enum CallDetail {
 
 #[repr(C)]
 #[allow(dead_code)]
-enum Type {
+pub enum Type {
     TypeNull = 0,
     TypeFalse,
     TypeTrue,
@@ -94,7 +95,7 @@ impl From<file::SnappyError> for FunctionSignatureError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionSignature {
     pub id: usize,
     pub name: String,
@@ -106,7 +107,10 @@ pub struct FunctionSignature {
 
 pub struct Call {
     pub sig: FunctionSignature,
-    pub args: Vec<Box<dyn value>>,
+    pub flag: Option<u16>,
+    pub index: usize,
+    pub ret: Option<Box<dyn Value>>,
+    pub args: Vec<Box<dyn Value>>,
 }
 
 enum CallFlags {

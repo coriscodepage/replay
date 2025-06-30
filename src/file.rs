@@ -2,7 +2,7 @@ use std::{cmp::min, error::Error, fs::File, io::{self, Read, Seek}, mem::MaybeUn
 
 use snap::raw::Decoder;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Position {
     pub chunk_offset: usize,
     pub position_in_chunk: usize,
