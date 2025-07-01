@@ -1,10 +1,11 @@
 [package]
 name = "replay"
 version = "0.1.0"
+edition = "2024"
 
 [dependencies]
 gl = "*"
-sdl3 = "0.14.33"
+sdl3 = "0.14.34"
 libc = "0.2" 
 snap = "1.1.1"
 regex = "1.11.1"

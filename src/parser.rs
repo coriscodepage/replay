@@ -6,7 +6,9 @@ use std::{
 
 use crate::{
     file::{SnappyError, SnappyFile},
-    trace::{self, Call, CallDetail, CallError, Event, FunctionSignature, Type},
+    trace::{
+        self, Call, CallDetail, CallError, EnumSignature, EnumValue, Event, FunctionSignature, Type,
+    },
     value_structure::{self, Value},
 };
 
@@ -65,9 +67,11 @@ pub struct Parser {
     pub version: usize,
     pub api: API,
     pub properties: HashMap<String, String>,
-    functions: Vec<Option<FunctionSignature>>,
     call_number: usize,
     call_list: VecDeque<Call>,
+    // SigState like Vec
+    functions: Vec<Option<FunctionSignature>>,
+    enums: Vec<Option<EnumSignature>>,
 }
 
 impl Parser {
@@ -86,9 +90,10 @@ impl Parser {
             version,
             api: API::ApiUnknown,
             properties: HashMap::new(),
-            functions: Vec::new(),
             call_number: 0,
             call_list: VecDeque::new(),
+            functions: Vec::new(),
+            enums: Vec::new(),
         })
     }
 
@@ -160,6 +165,13 @@ impl Parser {
         }
     }
 
+    fn lookup<T: Default>(map: &mut Vec<T>, index: usize) -> &mut T {
+        if index >= map.len() {
+            map.resize_with(map.len() + index + 1, T::default);
+        }
+        &mut map[index]
+    }
+
     pub fn parse_call_detail(&mut self, call: &mut Call) -> Result<bool, ParserError> {
         loop {
             match self.snappy.read_type::<u8>() {
@@ -168,7 +180,7 @@ impl Parser {
                     match val {
                         n if trace::CallDetail::CallEnd as u8 == n => return Ok(true),
                         n if trace::CallDetail::CallArg as u8 == n => {
-                            call.args = self.parse_arg()?
+                            self.parse_arg(call)?
                         }
                         n if trace::CallDetail::CallRet as u8 == n => {
                             call.ret = self.parse_value()?
@@ -187,16 +199,17 @@ impl Parser {
         }
     }
 
-    fn parse_arg(&mut self) -> Result<Vec<Box<dyn Value>>, ParserError> {
+    fn parse_arg(&mut self, call: &mut Call) -> Result<(), ParserError> {
         let index = self.snappy.read_varint()?;
-        let mut v_args = Vec::<Box<dyn Value>>::new();
         if let Some(val) = self.parse_value()? {
-            if index >= v_args.len() {
-                v_args.resize_with(v_args.len() + index + 1, || {Box::new(value_structure::None{})});
+            if index >= call.args.len() {
+                call.args.resize_with(call.args.len() + index + 1, || {
+                    Box::new(value_structure::None {})
+                });
             }
-            v_args[index] = val;
+            call.args[index] = val;
         };
-        Ok(v_args)
+        Ok(())
     }
 
     fn parse_value(&mut self) -> Result<Option<Box<dyn Value>>, ParserError> {
@@ -204,60 +217,65 @@ impl Parser {
             Err(_) => return Err(ParserError::SnappyError(SnappyError::InsufficientData)),
             Ok(val) => match val {
                 n if trace::Type::TypeNull as u8 == n => {
-                    return Ok(Some(Box::new(value_structure::None {})))
+                    return Ok(Some(Box::new(value_structure::None {})));
                 }
                 n if trace::Type::TypeFalse as u8 == n => {
-                    return Ok(Some(Box::new(value_structure::Bool { value: false })))
+                    return Ok(Some(Box::new(value_structure::Bool { value: false })));
                 }
                 n if trace::Type::TypeTrue as u8 == n => {
-                    return Ok(Some(Box::new(value_structure::Bool { value: true })))
+                    return Ok(Some(Box::new(value_structure::Bool { value: true })));
                 }
                 n if trace::Type::TypeSint as u8 == n => {
                     return Ok(Some(Box::new(value_structure::I64 {
                         value: -(self.snappy.read_varint()? as i64),
-                    })))
+                    })));
                 }
                 n if trace::Type::TypeUint as u8 == n => {
                     return Ok(Some(Box::new(value_structure::Usize {
                         value: self.snappy.read_varint()?,
-                    })))
+                    })));
                 }
                 n if trace::Type::TypeFloat as u8 == n => {
                     return Ok(Some(Box::new(value_structure::Float {
                         value: self.snappy.read_type::<f32>()?,
-                    })))
+                    })));
                 }
                 n if trace::Type::TypeDouble as u8 == n => {
                     return Ok(Some(Box::new(value_structure::Double {
                         value: self.snappy.read_type::<f64>()?,
-                    })))
+                    })));
                 }
                 n if trace::Type::TypeString as u8 == n => {
                     return Ok(Some(Box::new(value_structure::VString {
                         value: self.snappy.read_string()?,
-                    })))
+                    })));
                 }
                 n if trace::Type::TypeEnum as u8 == n => {
-                    let enum_signature = todo!();
+                    let enum_signature = self.parse_enum_sig()?;
                     let value = self.snappy.read_signed_varint()?;
-                },
+                    return Ok(Some(Box::new(value_structure::Enum {
+                        sig: enum_signature,
+                        value,
+                    })));
+                }
                 n if trace::Type::TypeBitmask as u8 == n => todo!(),
                 n if trace::Type::TypeArray as u8 == n => {
                     let len = self.snappy.read_varint()?;
-                    let mut arr = value_structure::Array{ values: Vec::new() };
-                    arr.values.resize_with(len, || {Box::new(value_structure::None{})});
+                    let mut arr = value_structure::Array { values: Vec::new() };
+                    arr.values
+                        .resize_with(len, || Box::new(value_structure::None {}));
                     for i in 0..len {
                         arr.values[i] = self.parse_value().unwrap().unwrap();
                     }
                     return Ok(Some(Box::new(arr)));
-                },
+                }
                 n if trace::Type::TypeStruct as u8 == n => todo!(),
                 n if trace::Type::TypeBlob as u8 == n => todo!(),
                 n if trace::Type::TypeOpaque as u8 == n => {
                     return Ok(Some(Box::new(value_structure::Pointer {
                         value: self.snappy.read_varint()? as *mut std::ffi::c_void,
-                    })))
-                },
+                    })));
+                }
                 n if trace::Type::TypeRepr as u8 == n => todo!(),
                 n if trace::Type::TypeWstring as u8 == n => todo!(),
 
@@ -268,10 +286,19 @@ impl Parser {
 
     fn parse_function_sig(&mut self) -> Result<FunctionSignature, ParserError> {
         let id = self.snappy.read_varint()?;
-        if id > self.functions.len() {
-            self.functions.resize(id + 1, None);
-        } else if let Some(r) = self.functions[id].as_ref() {
-            return Ok(r.clone());
+        let funsig_cached = Parser::lookup(&mut self.functions, id);
+        match funsig_cached {
+            Some(val) => {
+                if self.snappy.get_current_offset() < *val.state.as_ref().unwrap() {
+                    let _ = self.snappy.read_string()?;
+                    let num_args = self.snappy.read_varint()?;
+                    for _ in 0..num_args {
+                        let _ = self.snappy.read_string()?;
+                    }
+                }
+                return Ok(val.clone());
+            }
+            None => {}
         }
         let name = self.snappy.read_string()?;
         let num_args = self.snappy.read_varint()?;
@@ -315,7 +342,36 @@ impl Parser {
         Ok(sig)
     }
 
-    fn parse_enum_sig(&mut self) {
-        
+    fn parse_enum_sig(&mut self) -> Result<EnumSignature, ParserError> {
+        let id = self.snappy.read_varint()?;
+        let enum_signature_cached = Parser::lookup(&mut self.enums, id);
+        match enum_signature_cached {
+            Some(val) => {
+                if self.snappy.get_current_offset() < *val.state.as_ref().unwrap() {
+                    let num_args = self.snappy.read_varint()?;
+                    for _ in 0..num_args {
+                        let _ = self.snappy.read_string()?;
+                        let _ = self.snappy.read_signed_varint()?;
+                    }
+                }
+                return Ok(val.clone());
+            }
+            None => {}
+        }
+        let num_values = self.snappy.read_varint()?;
+        let mut enum_values = vec![EnumValue::default(); num_values];
+        for n in &mut enum_values {
+            n.name = self.snappy.read_string()?;
+            n.value = self.snappy.read_signed_varint()?;
+        }
+
+        let sig = EnumSignature {
+            id,
+            num_values,
+            values: enum_values,
+            state: Some(self.snappy.get_current_offset()),
+        };
+        self.enums[id] = Some(sig.clone());
+        Ok(sig)
     }
 }

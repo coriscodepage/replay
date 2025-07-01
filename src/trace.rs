@@ -105,17 +105,18 @@ pub(crate) struct FunctionSignature {
     pub state: Option<file::Position>
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct EnumValue {
-    name: &'static str,
-    value: i64,
+    pub name: String,
+    pub value: i64,
 }
 
-#[derive(Debug)]
-pub(crate) struct EnumSig {
-    id: usize,
-    num_values: usize,
-    values: EnumValue,
+#[derive(Debug, Clone, Default)]
+pub(crate) struct EnumSignature {
+    pub id: usize,
+    pub num_values: usize,
+    pub values: Vec<EnumValue>,
+    pub state: Option<file::Position>,
 }
 
 #[derive(Default, Debug)]

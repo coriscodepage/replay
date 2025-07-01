@@ -238,8 +238,8 @@ impl Array {
 
 #[derive(Debug)]
 pub struct Enum {
-    sig: trace::EnumSig,
-    value: i64,
+    pub sig: trace::EnumSignature,
+    pub value: i64,
 }
 
 impl Value for Enum {

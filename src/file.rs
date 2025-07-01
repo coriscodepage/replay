@@ -11,7 +11,7 @@ use snap::raw::Decoder;
 
 use crate::trace;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialOrd, PartialEq)]
 pub struct Position {
     pub chunk_offset: usize,
     pub position_in_chunk: usize,
