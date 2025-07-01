@@ -6,6 +6,8 @@ mod file;
 mod parser;
 mod trace;
 mod value_structure;
+mod call;
+mod signatures;
 
 use sdl3::event::Event;
 use sdl3::video::{SwapInterval, Window};
@@ -60,12 +62,12 @@ impl SdlContext {
 pub fn main() {
     let mut parser = Parser::new("../apitrace/hl2.trace").unwrap();
     parser.parse_properties().unwrap();
-    for _ in 0..500 {
+    for _ in 0..1000{
         let call = match parser.parse_call() {
             Ok(val) => val,
             Err(err) => {eprintln!("{}", err); panic!()}
         };
-        //println!("Parsed call: {:?}", call);
+        println!("Parsed call: {:?}", call);
     }
     /*parser.parse_properties().unwrap();
         let _ = parser.snappy.read_type::<u8>().unwrap();

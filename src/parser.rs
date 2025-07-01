@@ -1,14 +1,16 @@
 use std::{
     collections::{HashMap, VecDeque},
-    error::Error, panic::Location,
+    error::Error,
+    panic::Location,
 };
 
 use crate::{
+    call::{Call, CallDetail, CallError},
     file::{SnappyError, SnappyFile},
-    trace::{
-        self, Call, CallDetail, CallError, EnumSignature, EnumValue, Event, FunctionSignature,
-        StructSignature, Type,
+    signatures::{
+        BitmaskFlag, BitmaskSignature, EnumSignature, EnumValue, FunctionSignature, StructSignature,
     },
+    trace::{self, Event},
     value_structure::{self, Value},
 };
 
@@ -52,12 +54,14 @@ impl ParserError {
 }
 
 impl From<SnappyError> for ParserError {
+    #[track_caller]
     fn from(value: SnappyError) -> Self {
         Self::snappy_error(value)
     }
 }
 
 impl From<CallError> for ParserError {
+    #[track_caller]
     fn from(value: CallError) -> Self {
         Self::call_forming_error(value)
     }
@@ -73,7 +77,13 @@ impl std::fmt::Display for ParserError {
                 write!(f, "Snappy error: {} at {}:{}", err, loc.file(), loc.line())
             }
             ParserError::CallFormingError(loc, err) => {
-                write!(f, "Call forming error: {} at {}:{}", err, loc.file(), loc.line())
+                write!(
+                    f,
+                    "Call forming error: {} at {}:{}",
+                    err,
+                    loc.file(),
+                    loc.line()
+                )
             }
         }
     }
@@ -100,6 +110,7 @@ pub struct Parser {
     functions: Vec<Option<FunctionSignature>>,
     enums: Vec<Option<EnumSignature>>,
     structs: Vec<Option<StructSignature>>,
+    bitmasks: Vec<Option<BitmaskSignature>>,
 }
 
 impl Parser {
@@ -123,6 +134,7 @@ impl Parser {
             functions: Vec::new(),
             enums: Vec::new(),
             structs: Vec::new(),
+            bitmasks: Vec::new(),
         })
     }
 
@@ -161,7 +173,7 @@ impl Parser {
                         if self.parse_call_detail(&mut call)? {
                             self.call_list.push_back(call);
                         }
-                    },
+                    }
                     n if Event::EventLeave as u8 == n => {
                         let call_number = self.snappy.read_varint()?;
                         let mut call: Option<Call> = None;
@@ -177,8 +189,8 @@ impl Parser {
                             //TODO Whole glErrr handling. Works without
                             return Ok(call.unwrap());
                         }
-                    },
-                    _ => panic!("Unknown Event type")
+                    }
+                    _ => panic!("Unknown Event type"),
                 },
 
                 Err(_) => {
@@ -208,13 +220,11 @@ impl Parser {
                 Err(_) => return Ok(false),
                 Ok(val) => {
                     match val {
-                        n if trace::CallDetail::CallEnd as u8 == n => return Ok(true),
-                        n if trace::CallDetail::CallArg as u8 == n => self.parse_arg(call)?,
-                        n if trace::CallDetail::CallRet as u8 == n => {
-                            call.ret = self.parse_value()?
-                        }
-                        n if trace::CallDetail::CallBacktrace as u8 == n => {} //TODO
-                        n if trace::CallDetail::CallFlags as u8 == n => {
+                        n if CallDetail::CallEnd as u8 == n => return Ok(true),
+                        n if CallDetail::CallArg as u8 == n => self.parse_arg(call)?,
+                        n if CallDetail::CallRet as u8 == n => call.ret = self.parse_value()?,
+                        n if CallDetail::CallBacktrace as u8 == n => {} //TODO
+                        n if CallDetail::CallFlags as u8 == n => {
                             let flag = self.snappy.read_varint()?;
                             if flag & 1 == 1 {
                                 call.sig.flag = Some(call.sig.flag.unwrap_or(0) | 1);
@@ -275,7 +285,11 @@ impl Parser {
                 }
                 n if trace::Type::TypeString as u8 == n => {
                     return Ok(Some(Box::new(value_structure::VString {
-                        value: self.snappy.read_string()?,
+                        value: match self.snappy.read_string() {
+                            Ok(val) => val,
+                            Err(SnappyError::InsufficientData(_)) => String::new(),
+                            Err(err) => Err(err)?,
+                        },
                     })));
                 }
                 n if trace::Type::TypeEnum as u8 == n => {
@@ -286,7 +300,14 @@ impl Parser {
                         value,
                     })));
                 }
-                n if trace::Type::TypeBitmask as u8 == n => todo!(),
+                n if trace::Type::TypeBitmask as u8 == n => {
+                    let bitmask_signature = self.parse_bitmask_sig()?;
+                    let value = self.snappy.read_varint()?;
+                    return Ok(Some(Box::new(value_structure::Bitmask {
+                        sig: bitmask_signature,
+                        value,
+                    })));
+                }
                 n if trace::Type::TypeArray as u8 == n => {
                     let len = self.snappy.read_varint()?;
                     let mut arr = value_structure::Array { values: Vec::new() };
@@ -442,6 +463,41 @@ impl Parser {
             state: Some(self.snappy.get_current_offset()),
         };
         self.structs[id] = Some(sig.clone());
+        Ok(sig)
+    }
+
+    fn parse_bitmask_sig(&mut self) -> Result<BitmaskSignature, ParserError> {
+        let id = self.snappy.read_varint()?;
+        let struct_signature_cached = Parser::lookup(&mut self.bitmasks, id);
+        match struct_signature_cached {
+            Some(val) => {
+                if self.snappy.get_current_offset() < *val.state.as_ref().unwrap() {
+                    let num_flags = self.snappy.read_varint()?;
+                    for _ in 0..num_flags {
+                        let _ = self.snappy.read_string()?;
+                        let _ = self.snappy.read_varint()?;
+                    }
+                }
+                return Ok(val.clone());
+            }
+            None => {}
+        }
+        let num_flags = self.snappy.read_varint()?;
+        let mut bitmask_flags = Vec::with_capacity(num_flags);
+        for _ in 0..num_flags {
+            let flag = BitmaskFlag {
+                name: self.snappy.read_string()?,
+                value: self.snappy.read_varint()?,
+            };
+            bitmask_flags.push(flag);
+        }
+        let sig = BitmaskSignature {
+            id,
+            num_flags,
+            bitmask_flags,
+            state: Some(self.snappy.get_current_offset()),
+        };
+        self.bitmasks[id] = Some(sig.clone());
         Ok(sig)
     }
 }

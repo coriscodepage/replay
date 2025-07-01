@@ -1,6 +1,6 @@
 use std::{fmt::Debug, os::raw::c_void};
 
-use crate::trace;
+use crate::{signatures, trace};
 
 pub trait Value: Debug {
     fn to_bool(&self) -> Option<bool>;
@@ -238,7 +238,7 @@ impl Array {
 
 #[derive(Debug)]
 pub struct Enum {
-    pub sig: trace::EnumSignature,
+    pub sig: signatures::EnumSignature,
     pub value: i64,
 }
 
@@ -262,11 +262,35 @@ impl Value for Enum {
 
 #[derive(Debug)]
 pub struct Struct {
-    pub sig: trace::StructSignature,
+    pub sig: signatures::StructSignature,
     pub members: Vec<Box<dyn Value>>,
 }
 
 impl Value for Struct {
+        fn to_bool(&self) -> Option<bool> {
+        todo!()
+    }
+    fn to_usize(&self) -> Option<usize> {
+        todo!()
+    }
+    fn to_f32(&self) -> Option<f32> {
+        todo!()
+    }
+    fn to_f64(&self) -> Option<f64> {
+        todo!()
+    }
+    fn to_i64(&self) -> Option<i64> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
+pub struct Bitmask {
+    pub sig: signatures::BitmaskSignature,
+     pub value: usize,
+}
+
+impl Value for Bitmask {
         fn to_bool(&self) -> Option<bool> {
         todo!()
     }
