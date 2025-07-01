@@ -16,10 +16,25 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Install dependencies
+    - name: Install build dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libsdl3-dev
+        sudo apt-get install -y build-essential cmake ninja-build \
+          libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev \
+          libxi-dev libgl1-mesa-dev libglu1-mesa-dev libasound2-dev \
+          libpulse-dev libudev-dev libwayland-dev libxkbcommon-dev
+    
+    - name: Build and install SDL3
+      run: |
+        git clone https://github.com/libsdl-org/SDL.git --depth 1 --branch main
+        cd SDL
+        mkdir build && cd build
+        cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DSDL_SHARED=ON -DSDL_STATIC=ON
+        ninja
+        sudo ninja install
+        sudo ldconfig
     - name: Build
       run: cargo build --verbose
     - name: Run tests
