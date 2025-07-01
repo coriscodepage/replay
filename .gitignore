@@ -4,3 +4,4 @@ a.out
 *.cpp
 *.data
 *.code-workspace
+Cargo.lock

@@ -1,13 +1,13 @@
 use std::{
-    collections::{HashMap, LinkedList, VecDeque},
-    convert::TryFrom,
-    error::Error,
+    collections::{HashMap, VecDeque},
+    error::Error, panic::Location,
 };
 
 use crate::{
     file::{SnappyError, SnappyFile},
     trace::{
-        self, Call, CallDetail, CallError, EnumSignature, EnumValue, Event, FunctionSignature, Type,
+        self, Call, CallDetail, CallError, EnumSignature, EnumValue, Event, FunctionSignature,
+        StructSignature, Type,
     },
     value_structure::{self, Value},
 };
@@ -29,34 +29,61 @@ pub enum API {
 
 #[derive(Debug)]
 pub enum ParserError {
-    VersionMismatch,
-    SnappyError(SnappyError),
-    CallFormingError(CallError),
+    VersionMismatch(&'static Location<'static>),
+    SnappyError(&'static Location<'static>, SnappyError),
+    CallFormingError(&'static Location<'static>, CallError),
+}
+
+impl ParserError {
+    #[track_caller]
+    pub fn version_mismatch() -> Self {
+        Self::VersionMismatch(Location::caller())
+    }
+
+    #[track_caller]
+    pub fn snappy_error(error: SnappyError) -> Self {
+        Self::SnappyError(Location::caller(), error)
+    }
+
+    #[track_caller]
+    pub fn call_forming_error(error: CallError) -> Self {
+        Self::CallFormingError(Location::caller(), error)
+    }
 }
 
 impl From<SnappyError> for ParserError {
     fn from(value: SnappyError) -> Self {
-        Self::SnappyError(value)
+        Self::snappy_error(value)
     }
 }
 
 impl From<CallError> for ParserError {
     fn from(value: CallError) -> Self {
-        Self::CallFormingError(value)
+        Self::call_forming_error(value)
     }
 }
 
 impl std::fmt::Display for ParserError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ParserError::VersionMismatch(loc) => {
+                write!(f, "Version mismatch at {}:{}", loc.file(), loc.line())
+            }
+            ParserError::SnappyError(loc, err) => {
+                write!(f, "Snappy error: {} at {}:{}", err, loc.file(), loc.line())
+            }
+            ParserError::CallFormingError(loc, err) => {
+                write!(f, "Call forming error: {} at {}:{}", err, loc.file(), loc.line())
+            }
+        }
     }
 }
 
 impl Error for ParserError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            ParserError::SnappyError(err) => Some(err),
-            ParserError::CallFormingError(err) => Some(err),
+            ParserError::SnappyError(_, err) => Some(err),
+            ParserError::CallFormingError(_, err) => Some(err),
             _ => None,
         }
     }
@@ -72,6 +99,7 @@ pub struct Parser {
     // SigState like Vec
     functions: Vec<Option<FunctionSignature>>,
     enums: Vec<Option<EnumSignature>>,
+    structs: Vec<Option<StructSignature>>,
 }
 
 impl Parser {
@@ -80,10 +108,10 @@ impl Parser {
         let mut snappy = SnappyFile::new(path)?;
         let version = snappy.read_varint()?;
         if version > Self::TRACE_VERSION {
-            return Err(ParserError::VersionMismatch);
+            return Err(ParserError::version_mismatch());
         }
         if version < snappy.read_varint()? {
-            return Err(ParserError::VersionMismatch);
+            return Err(ParserError::version_mismatch());
         }
         Ok(Self {
             snappy,
@@ -94,6 +122,7 @@ impl Parser {
             call_list: VecDeque::new(),
             functions: Vec::new(),
             enums: Vec::new(),
+            structs: Vec::new(),
         })
     }
 
@@ -101,13 +130,13 @@ impl Parser {
         'properties_parser: loop {
             let name = match self.snappy.read_string() {
                 Ok(name) => name,
-                Err(SnappyError::InsufficientData) => break 'properties_parser,
-                Err(err) => return Err(ParserError::SnappyError(err)),
+                Err(SnappyError::InsufficientData(_)) => break 'properties_parser,
+                Err(err) => return Err(ParserError::snappy_error(err)),
             };
             let value = match self.snappy.read_string() {
                 Ok(name) => name,
-                Err(SnappyError::InsufficientData) => String::new(),
-                Err(err) => return Err(ParserError::SnappyError(err)),
+                Err(SnappyError::InsufficientData(_)) => String::new(),
+                Err(err) => return Err(ParserError::snappy_error(err)),
             };
             self.properties.insert(name, value);
         }
@@ -117,8 +146,8 @@ impl Parser {
     pub fn parse_call(&mut self) -> Result<Call, ParserError> {
         loop {
             match self.snappy.read_type::<u8>() {
-                Ok(val) => match Event::try_from(val).unwrap() {
-                    Event::EventEnter => {
+                Ok(val) => match val {
+                    n if Event::EventEnter as u8 == n => {
                         let thread_id = self.snappy.read_varint()?;
                         let sig = self.parse_function_sig()?;
                         let mut call = Call {
@@ -132,8 +161,8 @@ impl Parser {
                         if self.parse_call_detail(&mut call)? {
                             self.call_list.push_back(call);
                         }
-                    }
-                    Event::EventLeave => {
+                    },
+                    n if Event::EventLeave as u8 == n => {
                         let call_number = self.snappy.read_varint()?;
                         let mut call: Option<Call> = None;
                         for el in 0..self.call_list.len() {
@@ -148,7 +177,8 @@ impl Parser {
                             //TODO Whole glErrr handling. Works without
                             return Ok(call.unwrap());
                         }
-                    }
+                    },
+                    _ => panic!("Unknown Event type")
                 },
 
                 Err(_) => {
@@ -159,7 +189,7 @@ impl Parser {
                         //TODO Whole glErrr handling. Works without
                         return Ok(call.unwrap());
                     }
-                    return Err(ParserError::CallFormingError(CallError::NoCallAvailable));
+                    return Err(ParserError::call_forming_error(CallError::NoCallAvailable));
                 }
             }
         }
@@ -179,9 +209,7 @@ impl Parser {
                 Ok(val) => {
                     match val {
                         n if trace::CallDetail::CallEnd as u8 == n => return Ok(true),
-                        n if trace::CallDetail::CallArg as u8 == n => {
-                            self.parse_arg(call)?
-                        }
+                        n if trace::CallDetail::CallArg as u8 == n => self.parse_arg(call)?,
                         n if trace::CallDetail::CallRet as u8 == n => {
                             call.ret = self.parse_value()?
                         }
@@ -214,7 +242,7 @@ impl Parser {
 
     fn parse_value(&mut self) -> Result<Option<Box<dyn Value>>, ParserError> {
         match self.snappy.read_type::<u8>() {
-            Err(_) => return Err(ParserError::SnappyError(SnappyError::InsufficientData)),
+            Err(_) => return Err(ParserError::snappy_error(SnappyError::insufficient_data())),
             Ok(val) => match val {
                 n if trace::Type::TypeNull as u8 == n => {
                     return Ok(Some(Box::new(value_structure::None {})));
@@ -265,11 +293,21 @@ impl Parser {
                     arr.values
                         .resize_with(len, || Box::new(value_structure::None {}));
                     for i in 0..len {
-                        arr.values[i] = self.parse_value().unwrap().unwrap();
+                        arr.values[i] = (self.parse_value()?).unwrap();
                     }
                     return Ok(Some(Box::new(arr)));
                 }
-                n if trace::Type::TypeStruct as u8 == n => todo!(),
+                n if trace::Type::TypeStruct as u8 == n => {
+                    let struct_signature = self.pase_struct_sig()?;
+                    let mut value_struct = value_structure::Struct {
+                        sig: struct_signature,
+                        members: Vec::new(),
+                    };
+                    for _ in 0..value_struct.sig.num_members {
+                        value_struct.members.push((self.parse_value()?).unwrap());
+                    }
+                    return Ok(Some(Box::new(value_struct)));
+                }
                 n if trace::Type::TypeBlob as u8 == n => todo!(),
                 n if trace::Type::TypeOpaque as u8 == n => {
                     return Ok(Some(Box::new(value_structure::Pointer {
@@ -303,7 +341,6 @@ impl Parser {
         let name = self.snappy.read_string()?;
         let num_args = self.snappy.read_varint()?;
         let mut arg_names = Vec::with_capacity(num_args);
-
         for _ in 0..num_args {
             arg_names.push(self.snappy.read_string()?);
         }
@@ -372,6 +409,39 @@ impl Parser {
             state: Some(self.snappy.get_current_offset()),
         };
         self.enums[id] = Some(sig.clone());
+        Ok(sig)
+    }
+
+    fn pase_struct_sig(&mut self) -> Result<StructSignature, ParserError> {
+        let id = self.snappy.read_varint()?;
+        let struct_signature_cached = Parser::lookup(&mut self.structs, id);
+        match struct_signature_cached {
+            Some(val) => {
+                if self.snappy.get_current_offset() < *val.state.as_ref().unwrap() {
+                    let _ = self.snappy.read_string()?;
+                    let num_args = self.snappy.read_varint()?;
+                    for _ in 0..num_args {
+                        let _ = self.snappy.read_string()?;
+                    }
+                }
+                return Ok(val.clone());
+            }
+            None => {}
+        }
+        let name = self.snappy.read_string()?;
+        let num_members = self.snappy.read_varint()?;
+        let mut member_names = Vec::with_capacity(num_members);
+        for _ in 0..num_members {
+            member_names.push(self.snappy.read_string()?);
+        }
+        let sig = StructSignature {
+            id,
+            name,
+            num_members,
+            member_names,
+            state: Some(self.snappy.get_current_offset()),
+        };
+        self.structs[id] = Some(sig.clone());
         Ok(sig)
     }
 }

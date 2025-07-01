@@ -259,3 +259,27 @@ impl Value for Enum {
         todo!()
     }
 }
+
+#[derive(Debug)]
+pub struct Struct {
+    pub sig: trace::StructSignature,
+    pub members: Vec<Box<dyn Value>>,
+}
+
+impl Value for Struct {
+        fn to_bool(&self) -> Option<bool> {
+        todo!()
+    }
+    fn to_usize(&self) -> Option<usize> {
+        todo!()
+    }
+    fn to_f32(&self) -> Option<f32> {
+        todo!()
+    }
+    fn to_f64(&self) -> Option<f64> {
+        todo!()
+    }
+    fn to_i64(&self) -> Option<i64> {
+        todo!()
+    }
+}

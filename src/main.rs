@@ -61,8 +61,11 @@ pub fn main() {
     let mut parser = Parser::new("../apitrace/hl2.trace").unwrap();
     parser.parse_properties().unwrap();
     for _ in 0..500 {
-        let call = parser.parse_call().unwrap();
-        println!("Parsed call: {:?}", call);
+        let call = match parser.parse_call() {
+            Ok(val) => val,
+            Err(err) => {eprintln!("{}", err); panic!()}
+        };
+        //println!("Parsed call: {:?}", call);
     }
     /*parser.parse_properties().unwrap();
         let _ = parser.snappy.read_type::<u8>().unwrap();

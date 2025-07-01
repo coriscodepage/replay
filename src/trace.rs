@@ -1,7 +1,7 @@
-use std::convert::{TryFrom, TryInto};
-use std::fs::File;
+use std::convert::TryInto;
 use std::ops::BitOr;
-use std::{error::Error, fmt::Display};
+use std::panic::Location;
+use std::error::Error;
 
 use regex::Regex;
 
@@ -12,19 +12,6 @@ use crate::value_structure::Value;
 pub enum Event {
     EventEnter,
     EventLeave,
-}
-
-
-impl TryFrom<u8> for Event {
-    type Error = &'static str;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Event::EventEnter),
-            1 => Ok(Event::EventLeave),
-            _ => Err("Unknown Event type"),
-        }
-    }
 }
 
 #[repr(C)]
@@ -71,27 +58,52 @@ enum BacktraceDetail {
 
 #[derive(Debug)]
 pub enum FunctionSignatureError {
-    ParserError(parser::ParserError),
-    SnappyError(file::SnappyError),
+    ParserError(&'static Location<'static>, parser::ParserError),
+    SnappyError(&'static Location<'static>, file::SnappyError),
 }
 
-impl Display for FunctionSignatureError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
+impl std::fmt::Display for FunctionSignatureError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            FunctionSignatureError::ParserError(loc, err) => {
+                write!(f, "Parser error: {} at {}:{}", err, loc.file(), loc.line())
+            }
+            FunctionSignatureError::SnappyError(loc, err) => {
+                write!(f, "Snappy error: {} at {}:{}", err, loc.file(), loc.line())
+            }
+        }
     }
 }
 
-impl Error for FunctionSignatureError {}
+impl FunctionSignatureError {
+    #[track_caller]
+    fn parser_error(error: parser::ParserError) -> Self {
+        Self::ParserError(Location::caller(), error)
+    }
+    #[track_caller]
+    fn snappy_error(error: file::SnappyError) -> Self {
+        Self::SnappyError(Location::caller(), error)
+    }
+}
+
+impl Error for FunctionSignatureError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            FunctionSignatureError::ParserError(_, parser_error) => Some(parser_error),
+            FunctionSignatureError::SnappyError(_, snappy_error) => Some(snappy_error),
+        }
+    }
+}
 
 impl From<parser::ParserError> for FunctionSignatureError {
     fn from(value: parser::ParserError) -> Self {
-        FunctionSignatureError::ParserError(value)
+        FunctionSignatureError::parser_error(value)
     }
 }
 
 impl From<file::SnappyError> for FunctionSignatureError {
     fn from(value: file::SnappyError) -> Self {
-        FunctionSignatureError::SnappyError(value)
+        FunctionSignatureError::snappy_error(value)
     }
 }
 
@@ -116,6 +128,15 @@ pub(crate) struct EnumSignature {
     pub id: usize,
     pub num_values: usize,
     pub values: Vec<EnumValue>,
+    pub state: Option<file::Position>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct StructSignature {
+    pub id: usize,
+    pub name: String,
+    pub num_members: usize,
+    pub member_names: Vec<String>,
     pub state: Option<file::Position>,
 }
 
@@ -170,23 +191,43 @@ impl BitOr for CallFlags {
 
 #[derive(Debug)]
 pub enum CallError {
-    RegexError,
+    RegexError(regex::Error),
     ConversionError(&'static str),
     NoDetailsParsed,
     NoCallAvailable,
 }
 
-impl Display for CallError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
+impl std::fmt::Display for CallError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            CallError::RegexError(error) => {
+                write!(f, "Regex error {error}")
+            }
+            CallError::ConversionError(message) => {
+                write!(f, "Conversion error: {}", message)
+            }
+            CallError::NoDetailsParsed => {
+                write!(f, "No call details could be parsed")
+            }
+            CallError::NoCallAvailable => {
+                write!(f, "No call data available")
+            }
+        }
     }
 }
 
-impl Error for CallError {}
+impl Error for CallError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            CallError::RegexError(err) => Some(err),
+           _ => None,
+        }
+    }
+}
 
 impl From<regex::Error> for CallError {
-    fn from(_: regex::Error) -> Self {
-        Self::RegexError
+    fn from(value: regex::Error) -> Self {
+        Self::RegexError(value)
     }
 }
 

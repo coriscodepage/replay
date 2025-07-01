@@ -4,6 +4,7 @@ use std::{
     fs::File,
     io::{self, Read, Seek},
     mem::MaybeUninit,
+    panic::Location,
     string::FromUtf8Error,
 };
 
@@ -19,25 +20,79 @@ pub struct Position {
 
 #[derive(Debug)]
 pub enum SnappyError {
-    Io(io::Error),
-    InvalidHeader,
-    DecompressionError(snap::Error),
-    InsufficientData,
-    ConversionError,
+    Io(&'static Location<'static>, io::Error),
+    InvalidHeader(&'static Location<'static>),
+    DecompressionError(&'static Location<'static>, snap::Error),
+    InsufficientData(&'static Location<'static>),
+    ConversionError(&'static Location<'static>, String),
+}
+
+impl SnappyError {
+    #[track_caller]
+    pub fn io_error(error: io::Error) -> Self {
+        Self::Io(Location::caller(), error)
+    }
+
+    #[track_caller]
+    pub fn invalid_header() -> Self {
+        Self::InvalidHeader(Location::caller())
+    }
+
+    #[track_caller]
+    pub fn decompression_error(error: snap::Error) -> Self {
+        Self::DecompressionError(Location::caller(), error)
+    }
+
+    #[track_caller]
+    pub fn insufficient_data() -> Self {
+        Self::InsufficientData(Location::caller())
+    }
+
+    #[track_caller]
+    pub fn conversion_error(message: String) -> Self {
+        Self::ConversionError(Location::caller(), message)
+    }
 }
 
 impl std::fmt::Display for SnappyError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let err = self.to_string();
-        write!(f, "{}", err)
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            SnappyError::Io(loc, err) => {
+                write!(f, "IO error: {} at {}:{}", err, loc.file(), loc.line())
+            }
+            SnappyError::InvalidHeader(loc) => {
+                write!(f, "Invalid header at {}:{}", loc.file(), loc.line())
+            }
+            SnappyError::DecompressionError(loc, err) => {
+                write!(
+                    f,
+                    "Decompression error: {} at {}:{}",
+                    err,
+                    loc.file(),
+                    loc.line()
+                )
+            }
+            SnappyError::InsufficientData(loc) => {
+                write!(f, "Insufficient data at {}:{}", loc.file(), loc.line())
+            }
+            SnappyError::ConversionError(loc, msg) => {
+                write!(
+                    f,
+                    "Conversion error: {} at {}:{}",
+                    msg,
+                    loc.file(),
+                    loc.line()
+                )
+            }
+        }
     }
 }
 
 impl Error for SnappyError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            SnappyError::DecompressionError(err) => Some(err),
-            SnappyError::Io(err) => Some(err),
+            SnappyError::DecompressionError(_, err) => Some(err),
+            SnappyError::Io(_, err) => Some(err),
             _ => None,
         }
     }
@@ -45,20 +100,19 @@ impl Error for SnappyError {
 
 impl From<io::Error> for SnappyError {
     fn from(value: io::Error) -> Self {
-        SnappyError::Io(value)
+        SnappyError::io_error(value)
     }
 }
 
 impl From<snap::Error> for SnappyError {
     fn from(value: snap::Error) -> Self {
-        SnappyError::DecompressionError(value)
+        SnappyError::decompression_error(value)
     }
 }
 
 impl From<FromUtf8Error> for SnappyError {
     fn from(value: FromUtf8Error) -> Self {
-        let _ = value;
-        SnappyError::ConversionError
+        SnappyError::conversion_error(value.to_string())
     }
 }
 pub struct SnappyFile {
@@ -84,7 +138,7 @@ impl SnappyFile {
                 chunk_offset: 0,
             })
         } else {
-            Err(SnappyError::InvalidHeader)
+            Err(SnappyError::invalid_header())
         }
     }
     fn ensure_cache_capacity(&mut self, size: usize) {
@@ -168,7 +222,7 @@ impl SnappyFile {
                 break 'parse;
             }
             if shift >= usize::BITS as usize {
-                return Err(SnappyError::InsufficientData);
+                return Err(SnappyError::insufficient_data());
             }
         }
         Ok(return_value)
@@ -176,7 +230,7 @@ impl SnappyFile {
     pub fn read_string(&mut self) -> Result<String, SnappyError> {
         let len = self.read_varint()?;
         if len == 0 {
-            return Err(SnappyError::InsufficientData);
+            return Err(SnappyError::insufficient_data());
         }
         let buffer = self.read_bytes(len)?;
         Ok(String::from_utf8(buffer)?)
@@ -192,9 +246,9 @@ impl SnappyFile {
             Ok(val) => match val {
                 n if trace::Type::TypeSint as u8 == n => Ok(-(self.read_varint()? as i64)),
                 n if trace::Type::TypeUint as u8 == n => Ok(self.read_varint()? as i64),
-                _=> panic!("Unexpected type")
+                _ => panic!("Unexpected type"),
             },
-            Err(_) => Ok(0i64)
+            Err(_) => Ok(0i64),
         }
     }
 }
