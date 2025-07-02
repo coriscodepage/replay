@@ -8,6 +8,7 @@ mod trace;
 mod value_structure;
 mod call;
 mod signatures;
+mod retracer;
 
 use sdl3::event::Event;
 use sdl3::video::{SwapInterval, Window};
@@ -16,6 +17,7 @@ use std::error::Error;
 use std::ffi::c_void;
 
 use crate::parser::Parser;
+use crate::retracer::Retracer;
 
 pub struct SdlContext {
     pub sdl: Sdl,
@@ -61,13 +63,17 @@ impl SdlContext {
 
 pub fn main() {
     let mut parser = Parser::new("../apitrace/hl2.trace").unwrap();
+    let mut retracer = Retracer::init();
     parser.parse_properties().unwrap();
-    for _ in 0..1000{
-        let call = match parser.parse_call() {
-            Ok(val) => val,
-            Err(err) => {eprintln!("{}", err); panic!()}
+    for _ in 0..15000{
+        match parser.parse_call() {
+            Ok(mut val) => match retracer.retrace(&mut val) {
+                Ok(_) => println!("Call: {} retraced.", val.sig.name),
+                Err(err) => {}//eprintln!("error: {}", err),
+            }
+            Err(err) => {}//eprintln!("{}", err); panic!()}
         };
-        println!("Parsed call: {:?}", call);
+
     }
     /*parser.parse_properties().unwrap();
         let _ = parser.snappy.read_type::<u8>().unwrap();

@@ -11,11 +11,11 @@ pub enum FunctionSignatureError {
 impl std::fmt::Display for FunctionSignatureError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            FunctionSignatureError::ParserError(loc, err) => {
-                write!(f, "Parser error: {} at {}:{}", err, loc.file(), loc.line())
+            FunctionSignatureError::ParserError(location, err) => {
+                write!(f, "Parser error: {} at {}:{}", err, location.file(), location.line())
             }
-            FunctionSignatureError::SnappyError(loc, err) => {
-                write!(f, "Snappy error: {} at {}:{}", err, loc.file(), loc.line())
+            FunctionSignatureError::SnappyError(location, err) => {
+                write!(f, "Snappy error: {} at {}:{}", err, location.file(), location.line())
             }
         }
     }

@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     error::Error,
-    panic::Location,
+    panic::Location, rc::Rc,
 };
 
 use crate::{
@@ -70,19 +70,19 @@ impl From<CallError> for ParserError {
 impl std::fmt::Display for ParserError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            ParserError::VersionMismatch(loc) => {
-                write!(f, "Version mismatch at {}:{}", loc.file(), loc.line())
+            ParserError::VersionMismatch(location) => {
+                write!(f, "Version mismatch at {}:{}", location.file(), location.line())
             }
-            ParserError::SnappyError(loc, err) => {
-                write!(f, "Snappy error: {} at {}:{}", err, loc.file(), loc.line())
+            ParserError::SnappyError(location, err) => {
+                write!(f, "Snappy error: {} at {}:{}", err, location.file(), location.line())
             }
-            ParserError::CallFormingError(loc, err) => {
+            ParserError::CallFormingError(location, err) => {
                 write!(
                     f,
                     "Call forming error: {} at {}:{}",
                     err,
-                    loc.file(),
-                    loc.line()
+                    location.file(),
+                    location.line()
                 )
             }
         }
@@ -108,9 +108,9 @@ pub struct Parser {
     call_list: VecDeque<Call>,
     // SigState like Vec
     functions: Vec<Option<FunctionSignature>>,
-    enums: Vec<Option<EnumSignature>>,
-    structs: Vec<Option<StructSignature>>,
-    bitmasks: Vec<Option<BitmaskSignature>>,
+    enums: Vec<Option<Rc<EnumSignature>>>,
+    structs: Vec<Option<Rc<StructSignature>>>,
+    bitmasks: Vec<Option<Rc<BitmaskSignature>>>,
 }
 
 impl Parser {
@@ -209,7 +209,7 @@ impl Parser {
 
     fn lookup<T: Default>(map: &mut Vec<T>, index: usize) -> &mut T {
         if index >= map.len() {
-            map.resize_with(map.len() + index + 1, T::default);
+            map.resize_with(index + 1, T::default);
         }
         &mut map[index]
     }
@@ -241,7 +241,7 @@ impl Parser {
         let index = self.snappy.read_varint()?;
         if let Some(val) = self.parse_value()? {
             if index >= call.args.len() {
-                call.args.resize_with(call.args.len() + index + 1, || {
+                call.args.resize_with(index + 1, || {
                     Box::new(value_structure::None {})
                 });
             }
@@ -256,33 +256,33 @@ impl Parser {
             Ok(val) => match val {
                 n if trace::Type::TypeNull as u8 == n => {
                     return Ok(Some(Box::new(value_structure::None {})));
-                }
+                },
                 n if trace::Type::TypeFalse as u8 == n => {
                     return Ok(Some(Box::new(value_structure::Bool { value: false })));
-                }
+                },
                 n if trace::Type::TypeTrue as u8 == n => {
                     return Ok(Some(Box::new(value_structure::Bool { value: true })));
-                }
+                },
                 n if trace::Type::TypeSint as u8 == n => {
                     return Ok(Some(Box::new(value_structure::I64 {
                         value: -(self.snappy.read_varint()? as i64),
                     })));
-                }
+                },
                 n if trace::Type::TypeUint as u8 == n => {
                     return Ok(Some(Box::new(value_structure::Usize {
                         value: self.snappy.read_varint()?,
                     })));
-                }
+                },
                 n if trace::Type::TypeFloat as u8 == n => {
                     return Ok(Some(Box::new(value_structure::Float {
                         value: self.snappy.read_type::<f32>()?,
                     })));
-                }
+                },
                 n if trace::Type::TypeDouble as u8 == n => {
                     return Ok(Some(Box::new(value_structure::Double {
                         value: self.snappy.read_type::<f64>()?,
                     })));
-                }
+                },
                 n if trace::Type::TypeString as u8 == n => {
                     return Ok(Some(Box::new(value_structure::VString {
                         value: match self.snappy.read_string() {
@@ -291,7 +291,7 @@ impl Parser {
                             Err(err) => Err(err)?,
                         },
                     })));
-                }
+                },
                 n if trace::Type::TypeEnum as u8 == n => {
                     let enum_signature = self.parse_enum_sig()?;
                     let value = self.snappy.read_signed_varint()?;
@@ -299,7 +299,7 @@ impl Parser {
                         sig: enum_signature,
                         value,
                     })));
-                }
+                },
                 n if trace::Type::TypeBitmask as u8 == n => {
                     let bitmask_signature = self.parse_bitmask_sig()?;
                     let value = self.snappy.read_varint()?;
@@ -307,7 +307,7 @@ impl Parser {
                         sig: bitmask_signature,
                         value,
                     })));
-                }
+                },
                 n if trace::Type::TypeArray as u8 == n => {
                     let len = self.snappy.read_varint()?;
                     let mut arr = value_structure::Array { values: Vec::new() };
@@ -317,7 +317,7 @@ impl Parser {
                         arr.values[i] = (self.parse_value()?).unwrap();
                     }
                     return Ok(Some(Box::new(arr)));
-                }
+                },
                 n if trace::Type::TypeStruct as u8 == n => {
                     let struct_signature = self.pase_struct_sig()?;
                     let mut value_struct = value_structure::Struct {
@@ -328,8 +328,17 @@ impl Parser {
                         value_struct.members.push((self.parse_value()?).unwrap());
                     }
                     return Ok(Some(Box::new(value_struct)));
-                }
-                n if trace::Type::TypeBlob as u8 == n => todo!(),
+                },
+                n if trace::Type::TypeBlob as u8 == n => {
+                    let size = self.snappy.read_varint()?;
+                    let mut buffer = vec![0u8; size];
+                    self.snappy.read_bytes(&mut buffer)?;
+                    return Ok(Some(Box::new(value_structure::Blob {
+                        size,
+                        buffer,
+                        bound: false,
+                    })));
+                },
                 n if trace::Type::TypeOpaque as u8 == n => {
                     return Ok(Some(Box::new(value_structure::Pointer {
                         value: self.snappy.read_varint()? as *mut std::ffi::c_void,
@@ -345,8 +354,8 @@ impl Parser {
 
     fn parse_function_sig(&mut self) -> Result<FunctionSignature, ParserError> {
         let id = self.snappy.read_varint()?;
-        let funsig_cached = Parser::lookup(&mut self.functions, id);
-        match funsig_cached {
+        let function_signature_cached = Parser::lookup(&mut self.functions, id);
+        match function_signature_cached {
             Some(val) => {
                 if self.snappy.get_current_offset() < *val.state.as_ref().unwrap() {
                     let _ = self.snappy.read_string()?;
@@ -400,10 +409,10 @@ impl Parser {
         Ok(sig)
     }
 
-    fn parse_enum_sig(&mut self) -> Result<EnumSignature, ParserError> {
+    fn parse_enum_sig(&mut self) -> Result<Rc<EnumSignature>, ParserError> {
         let id = self.snappy.read_varint()?;
-        let enum_signature_cached = Parser::lookup(&mut self.enums, id);
-        match enum_signature_cached {
+        let enum_signature = Parser::lookup(&mut self.enums, id);
+        match enum_signature {
             Some(val) => {
                 if self.snappy.get_current_offset() < *val.state.as_ref().unwrap() {
                     let num_args = self.snappy.read_varint()?;
@@ -412,7 +421,7 @@ impl Parser {
                         let _ = self.snappy.read_signed_varint()?;
                     }
                 }
-                return Ok(val.clone());
+                return Ok(Rc::clone(&val));
             }
             None => {}
         }
@@ -423,20 +432,20 @@ impl Parser {
             n.value = self.snappy.read_signed_varint()?;
         }
 
-        let sig = EnumSignature {
+        let sig = Rc::new(EnumSignature {
             id,
             num_values,
             values: enum_values,
             state: Some(self.snappy.get_current_offset()),
-        };
-        self.enums[id] = Some(sig.clone());
+        });
+        *enum_signature = Some(Rc::clone(&sig));
         Ok(sig)
     }
 
-    fn pase_struct_sig(&mut self) -> Result<StructSignature, ParserError> {
+    fn pase_struct_sig(&mut self) -> Result<Rc<StructSignature>, ParserError> {
         let id = self.snappy.read_varint()?;
-        let struct_signature_cached = Parser::lookup(&mut self.structs, id);
-        match struct_signature_cached {
+        let struct_signature = Parser::lookup(&mut self.structs, id);
+        match struct_signature {
             Some(val) => {
                 if self.snappy.get_current_offset() < *val.state.as_ref().unwrap() {
                     let _ = self.snappy.read_string()?;
@@ -445,7 +454,7 @@ impl Parser {
                         let _ = self.snappy.read_string()?;
                     }
                 }
-                return Ok(val.clone());
+                return Ok(Rc::clone(&val));
             }
             None => {}
         }
@@ -455,18 +464,18 @@ impl Parser {
         for _ in 0..num_members {
             member_names.push(self.snappy.read_string()?);
         }
-        let sig = StructSignature {
+        let sig = Rc::new(StructSignature {
             id,
             name,
             num_members,
             member_names,
             state: Some(self.snappy.get_current_offset()),
-        };
-        self.structs[id] = Some(sig.clone());
+        });
+        self.structs[id] = Some(Rc::clone(&sig));
         Ok(sig)
     }
 
-    fn parse_bitmask_sig(&mut self) -> Result<BitmaskSignature, ParserError> {
+    fn parse_bitmask_sig(&mut self) -> Result<Rc<BitmaskSignature>, ParserError> {
         let id = self.snappy.read_varint()?;
         let struct_signature_cached = Parser::lookup(&mut self.bitmasks, id);
         match struct_signature_cached {
@@ -478,7 +487,7 @@ impl Parser {
                         let _ = self.snappy.read_varint()?;
                     }
                 }
-                return Ok(val.clone());
+                return Ok(Rc::clone(&val));
             }
             None => {}
         }
@@ -491,13 +500,13 @@ impl Parser {
             };
             bitmask_flags.push(flag);
         }
-        let sig = BitmaskSignature {
+        let sig = Rc::new(BitmaskSignature {
             id,
             num_flags,
             bitmask_flags,
             state: Some(self.snappy.get_current_offset()),
-        };
-        self.bitmasks[id] = Some(sig.clone());
+        });
+        self.bitmasks[id] = Some(Rc::clone(&sig));
         Ok(sig)
     }
 }

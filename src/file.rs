@@ -12,7 +12,7 @@ use snap::raw::Decoder;
 
 use crate::trace;
 
-#[derive(Debug, Clone, PartialOrd, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq)]
 pub struct Position {
     pub chunk_offset: usize,
     pub position_in_chunk: usize,
@@ -57,31 +57,31 @@ impl SnappyError {
 impl std::fmt::Display for SnappyError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            SnappyError::Io(loc, err) => {
-                write!(f, "IO error: {} at {}:{}", err, loc.file(), loc.line())
+            SnappyError::Io(location, err) => {
+                write!(f, "IO error: {} at {}:{}", err, location.file(), location.line())
             }
-            SnappyError::InvalidHeader(loc) => {
-                write!(f, "Invalid header at {}:{}", loc.file(), loc.line())
+            SnappyError::InvalidHeader(location) => {
+                write!(f, "Invalid header at {}:{}", location.file(), location.line())
             }
-            SnappyError::DecompressionError(loc, err) => {
+            SnappyError::DecompressionError(location, err) => {
                 write!(
                     f,
                     "Decompression error: {} at {}:{}",
                     err,
-                    loc.file(),
-                    loc.line()
+                    location.file(),
+                    location.line()
                 )
             }
-            SnappyError::InsufficientData(loc) => {
-                write!(f, "Insufficient data at {}:{}", loc.file(), loc.line())
+            SnappyError::InsufficientData(location) => {
+                write!(f, "Insufficient data at {}:{}", location.file(), location.line())
             }
-            SnappyError::ConversionError(loc, msg) => {
+            SnappyError::ConversionError(location, msg) => {
                 write!(
                     f,
                     "Conversion error: {} at {}:{}",
                     msg,
-                    loc.file(),
-                    loc.line()
+                    location.file(),
+                    location.line()
                 )
             }
         }
@@ -143,7 +143,7 @@ impl SnappyFile {
     }
     fn ensure_cache_capacity(&mut self, size: usize) {
         if size > self.cache.capacity() {
-            self.cache.reserve(size - self.cache.capacity());
+            self.cache.resize(size, 0);
         }
         self.cache_pos = 0;
     }
@@ -157,11 +157,11 @@ impl SnappyFile {
         self.chunk_offset = self.snappy_file.stream_position()? as usize;
         let compressed_length = self.read_compressed_length()?;
         let mut buffer = vec![0u8; compressed_length];
-        self.cache = match self.snappy_file.read_exact(&mut buffer) {
+        match self.snappy_file.read_exact(&mut buffer) {
             Ok(_) => {
                 let uncompressed_length = snap::raw::decompress_len(&buffer)?;
                 self.ensure_cache_capacity(uncompressed_length);
-                self.snappy_decoder.decompress_vec(&buffer)?
+                self.snappy_decoder.decompress(&buffer, &mut self.cache)?
             }
             Err(err) => Err(err)?,
         };
@@ -172,17 +172,17 @@ impl SnappyFile {
         self.cache.len().saturating_sub(self.cache_pos)
     }
 
-    fn read_bytes(&mut self, len: usize) -> Result<Vec<u8>, SnappyError> {
-        let mut return_value = vec![0u8; len];
+    pub fn read_bytes(&mut self, buf: &mut [u8]) -> Result<(), SnappyError> {
+        let len = buf.len();
         if self.cache_remaining() >= len {
-            return_value = self.cache[self.cache_pos..(len + self.cache_pos)].to_vec();
+            buf.copy_from_slice(&self.cache[self.cache_pos..(len + self.cache_pos)]);
             self.cache_pos += len;
         } else {
             let mut size_to_read = len;
             while size_to_read > 0 {
                 let chunk_size = min(self.cache.len() - self.cache_pos, size_to_read as usize);
                 let offset = len - size_to_read;
-                return_value[offset..offset + chunk_size]
+                buf[offset..offset + chunk_size]
                     .copy_from_slice(&self.cache[self.cache_pos..(chunk_size + self.cache_pos)]);
                 self.cache_pos += chunk_size;
                 size_to_read -= chunk_size;
@@ -191,39 +191,43 @@ impl SnappyFile {
                 }
             }
         }
-        Ok(return_value)
+        Ok(())
     }
 
-    pub fn read_type<T>(&mut self) -> Result<T, SnappyError> {
+    pub fn read_type<T: Sized>(&mut self) -> Result<T, SnappyError> {
         let mut tmp = MaybeUninit::<T>::uninit();
-        let value = self.read_bytes(size_of::<T>())?;
+        let mut buffer = vec![0u8; size_of::<T>()];
+        self.read_bytes(&mut buffer)?;
         unsafe {
             std::ptr::copy_nonoverlapping(
-                value.as_ptr(),
+                buffer.as_ptr(),
                 tmp.as_mut_ptr() as *mut u8,
                 size_of::<T>(),
-            )
-        };
+            );
+        }
         Ok(unsafe { tmp.assume_init() })
     }
     pub fn read_varint(&mut self) -> Result<usize, SnappyError> {
         let mut return_value: usize = 0;
         let mut shift: usize = 0;
+        let mut single_val = [0u8; 1];
         'parse: loop {
-            let single_val = match self.read_type::<u8>() {
-                Ok(val) => val,
+            match self.read_bytes(&mut single_val) {
+                Ok(_) => {
+                    let single_val = single_val[0];
+                    return_value |= (single_val as usize & 0x7f) << shift;
+                    shift += 7;
+                    if single_val & 0x80 == 0 {
+                        break 'parse;
+                    }
+                    if shift >= usize::BITS as usize {
+                        return Err(SnappyError::insufficient_data());
+                    }
+                },
                 Err(_) => {
                     break 'parse;
-                }
+                },
             };
-            return_value |= (single_val as usize & 0x7f) << shift;
-            shift += 7;
-            if single_val & 0x80 == 0 {
-                break 'parse;
-            }
-            if shift >= usize::BITS as usize {
-                return Err(SnappyError::insufficient_data());
-            }
         }
         Ok(return_value)
     }
@@ -232,7 +236,8 @@ impl SnappyFile {
         if len == 0 {
             return Err(SnappyError::insufficient_data());
         }
-        let buffer = self.read_bytes(len)?;
+        let mut buffer = vec![0u8; len];
+        self.read_bytes(&mut buffer)?;
         Ok(String::from_utf8(buffer)?)
     }
     pub fn get_current_offset(&mut self) -> Position {

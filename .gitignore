@@ -5,3 +5,4 @@ a.out
 *.data
 *.code-workspace
 Cargo.lock
+*.json.gz

@@ -1,6 +1,6 @@
-use std::{fmt::Debug, os::raw::c_void};
+use std::{fmt::Debug, os::raw::c_void, rc::Rc};
 
-use crate::{signatures, trace};
+use crate::signatures;
 
 pub trait Value: Debug {
     fn to_bool(&self) -> Option<bool>;
@@ -238,7 +238,7 @@ impl Array {
 
 #[derive(Debug)]
 pub struct Enum {
-    pub sig: signatures::EnumSignature,
+    pub sig: Rc<signatures::EnumSignature>,
     pub value: i64,
 }
 
@@ -262,7 +262,7 @@ impl Value for Enum {
 
 #[derive(Debug)]
 pub struct Struct {
-    pub sig: signatures::StructSignature,
+    pub sig: Rc<signatures::StructSignature>,
     pub members: Vec<Box<dyn Value>>,
 }
 
@@ -286,11 +286,36 @@ impl Value for Struct {
 
 #[derive(Debug)]
 pub struct Bitmask {
-    pub sig: signatures::BitmaskSignature,
+    pub sig: Rc<signatures::BitmaskSignature>,
      pub value: usize,
 }
 
 impl Value for Bitmask {
+        fn to_bool(&self) -> Option<bool> {
+        todo!()
+    }
+    fn to_usize(&self) -> Option<usize> {
+        todo!()
+    }
+    fn to_f32(&self) -> Option<f32> {
+        todo!()
+    }
+    fn to_f64(&self) -> Option<f64> {
+        todo!()
+    }
+    fn to_i64(&self) -> Option<i64> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
+pub struct Blob {
+    pub size: usize,
+    pub buffer: Vec<u8>,
+    pub bound: bool,
+}
+
+impl Value for Blob {
         fn to_bool(&self) -> Option<bool> {
         todo!()
     }
