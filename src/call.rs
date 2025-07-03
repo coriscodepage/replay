@@ -192,6 +192,15 @@ impl Call {
         }
         return Ok(None);
     }
+
+    pub fn arg(&mut self, index: usize) -> &Box<dyn Value> {
+        if index > self.args.len() {
+            panic!("Arg index out of range");
+        }
+        else {
+            return &self.args[index];
+        }
+    }
 }
 
 impl FunctionSignature {}

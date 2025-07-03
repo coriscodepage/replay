@@ -264,13 +264,13 @@ impl Parser {
                     return Ok(Some(Box::new(value_structure::Bool { value: true })));
                 },
                 n if trace::Type::TypeSint as u8 == n => {
-                    return Ok(Some(Box::new(value_structure::I64 {
-                        value: -(self.snappy.read_varint()? as i64),
+                    return Ok(Some(Box::new(value_structure::I32 {
+                        value: -(self.snappy.read_varint()? as i32),
                     })));
                 },
                 n if trace::Type::TypeUint as u8 == n => {
-                    return Ok(Some(Box::new(value_structure::Usize {
-                        value: self.snappy.read_varint()?,
+                    return Ok(Some(Box::new(value_structure::U32 {
+                        value: self.snappy.read_varint()? as u32,
                     })));
                 },
                 n if trace::Type::TypeFloat as u8 == n => {

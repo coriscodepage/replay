@@ -4,10 +4,12 @@ use crate::signatures;
 
 pub trait Value: Debug {
     fn to_bool(&self) -> Option<bool>;
-    fn to_usize(&self) -> Option<usize>;
-    fn to_i64(&self) -> Option<i64>;
+    fn to_u32(&self) -> Option<u32>;
+    fn to_i32(&self) -> Option<i32>;
     fn to_f32(&self) -> Option<f32>;
     fn to_f64(&self) -> Option<f64>;
+    fn to_array(&self) -> Option<&Array>;
+    fn to_pointer(&self) -> Option<*mut c_void>;
 }
 
 #[derive(Debug)]
@@ -17,8 +19,8 @@ impl Value for None {
     fn to_bool(&self) -> Option<bool> {
         None
     }
-    fn to_usize(&self) -> Option<usize> {
-        None
+    fn to_u32(&self) -> Option<u32> {
+        Some(0)
     }
     fn to_f32(&self) -> Option<f32> {
         None
@@ -26,8 +28,16 @@ impl Value for None {
     fn to_f64(&self) -> Option<f64> {
         None
     }
-    fn to_i64(&self) -> Option<i64> {
-        None
+    fn to_i32(&self) -> Option<i32> {
+        Some(0)
+    }
+
+    fn to_array(&self) -> Option<&Array> {
+        todo!()
+    }
+    
+    fn to_pointer(&self) -> Option<*mut c_void> {
+        todo!()
     }
 }
 
@@ -40,13 +50,13 @@ impl Value for Bool {
     fn to_bool(&self) -> Option<bool> {
         Some(self.value)
     }
-    fn to_usize(&self) -> Option<usize> {
+    fn to_u32(&self) -> Option<u32> {
         match self.value {
             true => Some(1),
             false => Some(0),
         }
     }
-    fn to_i64(&self) -> Option<i64> {
+    fn to_i32(&self) -> Option<i32> {
         match self.value {
             true => Some(1),
             false => Some(0),
@@ -64,22 +74,29 @@ impl Value for Bool {
             false => Some(0.0),
         }
     }
+    fn to_array(&self) -> Option<&Array> {
+        todo!()
+    }
+    
+    fn to_pointer(&self) -> Option<*mut c_void> {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
-pub struct Usize {
-    pub value: usize,
+pub struct U32 {
+    pub value: u32,
 }
 
-impl Value for Usize {
+impl Value for U32 {
     fn to_bool(&self) -> Option<bool> {
         Some(self.value != 0)
     }
-    fn to_usize(&self) -> Option<usize> {
+    fn to_u32(&self) -> Option<u32> {
         Some(self.value)
     }
-    fn to_i64(&self) -> Option<i64> {
-        return Some(self.value as i64);
+    fn to_i32(&self) -> Option<i32> {
+        return Some(self.value as i32);
     }
     fn to_f32(&self) -> Option<f32> {
         Some(self.value as f32)
@@ -87,24 +104,31 @@ impl Value for Usize {
     fn to_f64(&self) -> Option<f64> {
         Some(self.value as f64)
     }
+    fn to_array(&self) -> Option<&Array> {
+        todo!()
+    }
+    
+    fn to_pointer(&self) -> Option<*mut c_void> {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
-pub struct I64 {
-    pub value: i64,
+pub struct I32 {
+    pub value: i32,
 }
 
-impl Value for I64 {
+impl Value for I32 {
     fn to_bool(&self) -> Option<bool> {
         Some(self.value != 0)
     }
-    fn to_usize(&self) -> Option<usize> {
+    fn to_u32(&self) -> Option<u32> {
         if self.value >= 0 {
-            return Some(self.value as usize);
+            return Some(self.value as u32);
         }
         None
     }
-    fn to_i64(&self) -> Option<i64> {
+    fn to_i32(&self) -> Option<i32> {
         Some(self.value)
     }
     fn to_f32(&self) -> Option<f32> {
@@ -112,6 +136,13 @@ impl Value for I64 {
     }
     fn to_f64(&self) -> Option<f64> {
         Some(self.value as f64)
+    }
+    fn to_array(&self) -> Option<&Array> {
+        todo!()
+    }
+    
+    fn to_pointer(&self) -> Option<*mut c_void> {
+        todo!()
     }
 }
 
@@ -124,17 +155,24 @@ impl Value for Float {
     fn to_bool(&self) -> Option<bool> {
         Some(self.value != 0.0)
     }
-    fn to_usize(&self) -> Option<usize> {
-        Some(self.value as usize)
+    fn to_u32(&self) -> Option<u32> {
+        Some(self.value as u32)
     }
-    fn to_i64(&self) -> Option<i64> {
-        Some(self.value as i64)
+    fn to_i32(&self) -> Option<i32> {
+        Some(self.value as i32)
     }
     fn to_f32(&self) -> Option<f32> {
         Some(self.value)
     }
     fn to_f64(&self) -> Option<f64> {
         Some(self.value as f64)
+    }
+    fn to_array(&self) -> Option<&Array> {
+        todo!()
+    }
+    
+    fn to_pointer(&self) -> Option<*mut c_void> {
+        todo!()
     }
 }
 
@@ -147,11 +185,11 @@ impl Value for Double {
     fn to_bool(&self) -> Option<bool> {
         Some(self.value != 0.0)
     }
-    fn to_usize(&self) -> Option<usize> {
-        Some(self.value as usize)
+    fn to_u32(&self) -> Option<u32> {
+        Some(self.value as u32)
     }
-    fn to_i64(&self) -> Option<i64> {
-        Some(self.value as i64)
+    fn to_i32(&self) -> Option<i32> {
+        Some(self.value as i32)
     }
     fn to_f32(&self) -> Option<f32> {
         Some(self.value as f32)
@@ -159,18 +197,25 @@ impl Value for Double {
     fn to_f64(&self) -> Option<f64> {
         Some(self.value)
     }
+    fn to_array(&self) -> Option<&Array> {
+        todo!()
+    }
+    
+    fn to_pointer(&self) -> Option<*mut c_void> {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
 pub struct VString {
-    pub value: String
+    pub value: String,
 }
 
 impl Value for VString {
     fn to_bool(&self) -> Option<bool> {
         Some(true)
     }
-    fn to_usize(&self) -> Option<usize> {
+    fn to_u32(&self) -> Option<u32> {
         None
     }
     fn to_f32(&self) -> Option<f32> {
@@ -179,8 +224,15 @@ impl Value for VString {
     fn to_f64(&self) -> Option<f64> {
         None
     }
-    fn to_i64(&self) -> Option<i64> {
+    fn to_i32(&self) -> Option<i32> {
         None
+    }
+    fn to_array(&self) -> Option<&Array> {
+        todo!()
+    }
+    
+    fn to_pointer(&self) -> Option<*mut c_void> {
+        todo!()
     }
 }
 
@@ -191,9 +243,9 @@ pub struct Pointer {
 
 impl Value for Pointer {
     fn to_bool(&self) -> Option<bool> {
-        todo!()
+        Some(!self.value.is_null())
     }
-    fn to_usize(&self) -> Option<usize> {
+    fn to_u32(&self) -> Option<u32> {
         todo!()
     }
     fn to_f32(&self) -> Option<f32> {
@@ -202,8 +254,15 @@ impl Value for Pointer {
     fn to_f64(&self) -> Option<f64> {
         todo!()
     }
-    fn to_i64(&self) -> Option<i64> {
+    fn to_i32(&self) -> Option<i32> {
         todo!()
+    }
+    fn to_array(&self) -> Option<&Array> {
+        todo!()
+    }
+    
+    fn to_pointer(&self) -> Option<*mut c_void> {
+        Some(self.value)
     }
 }
 
@@ -216,7 +275,7 @@ impl Value for Array {
     fn to_bool(&self) -> Option<bool> {
         todo!()
     }
-    fn to_usize(&self) -> Option<usize> {
+    fn to_u32(&self) -> Option<u32> {
         todo!()
     }
     fn to_f32(&self) -> Option<f32> {
@@ -225,7 +284,14 @@ impl Value for Array {
     fn to_f64(&self) -> Option<f64> {
         todo!()
     }
-    fn to_i64(&self) -> Option<i64> {
+    fn to_i32(&self) -> Option<i32> {
+        todo!()
+    }
+    fn to_array(&self) -> Option<&Array> {
+        Some(self)
+    }
+    
+    fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
     }
 }
@@ -243,10 +309,10 @@ pub struct Enum {
 }
 
 impl Value for Enum {
-        fn to_bool(&self) -> Option<bool> {
+    fn to_bool(&self) -> Option<bool> {
         todo!()
     }
-    fn to_usize(&self) -> Option<usize> {
+    fn to_u32(&self) -> Option<u32> {
         todo!()
     }
     fn to_f32(&self) -> Option<f32> {
@@ -255,7 +321,14 @@ impl Value for Enum {
     fn to_f64(&self) -> Option<f64> {
         todo!()
     }
-    fn to_i64(&self) -> Option<i64> {
+    fn to_i32(&self) -> Option<i32> {
+        todo!()
+    }
+    fn to_array(&self) -> Option<&Array> {
+        todo!()
+    }
+    
+    fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
     }
 }
@@ -267,10 +340,10 @@ pub struct Struct {
 }
 
 impl Value for Struct {
-        fn to_bool(&self) -> Option<bool> {
+    fn to_bool(&self) -> Option<bool> {
         todo!()
     }
-    fn to_usize(&self) -> Option<usize> {
+    fn to_u32(&self) -> Option<u32> {
         todo!()
     }
     fn to_f32(&self) -> Option<f32> {
@@ -279,7 +352,14 @@ impl Value for Struct {
     fn to_f64(&self) -> Option<f64> {
         todo!()
     }
-    fn to_i64(&self) -> Option<i64> {
+    fn to_i32(&self) -> Option<i32> {
+        todo!()
+    }
+    fn to_array(&self) -> Option<&Array> {
+        todo!()
+    }
+    
+    fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
     }
 }
@@ -287,14 +367,14 @@ impl Value for Struct {
 #[derive(Debug)]
 pub struct Bitmask {
     pub sig: Rc<signatures::BitmaskSignature>,
-     pub value: usize,
+    pub value: usize,
 }
 
 impl Value for Bitmask {
-        fn to_bool(&self) -> Option<bool> {
+    fn to_bool(&self) -> Option<bool> {
         todo!()
     }
-    fn to_usize(&self) -> Option<usize> {
+    fn to_u32(&self) -> Option<u32> {
         todo!()
     }
     fn to_f32(&self) -> Option<f32> {
@@ -303,7 +383,14 @@ impl Value for Bitmask {
     fn to_f64(&self) -> Option<f64> {
         todo!()
     }
-    fn to_i64(&self) -> Option<i64> {
+    fn to_i32(&self) -> Option<i32> {
+        todo!()
+    }
+    fn to_array(&self) -> Option<&Array> {
+        todo!()
+    }
+    
+    fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
     }
 }
@@ -316,10 +403,10 @@ pub struct Blob {
 }
 
 impl Value for Blob {
-        fn to_bool(&self) -> Option<bool> {
+    fn to_bool(&self) -> Option<bool> {
         todo!()
     }
-    fn to_usize(&self) -> Option<usize> {
+    fn to_u32(&self) -> Option<u32> {
         todo!()
     }
     fn to_f32(&self) -> Option<f32> {
@@ -328,7 +415,14 @@ impl Value for Blob {
     fn to_f64(&self) -> Option<f64> {
         todo!()
     }
-    fn to_i64(&self) -> Option<i64> {
+    fn to_i32(&self) -> Option<i32> {
         todo!()
+    }
+    fn to_array(&self) -> Option<&Array> {
+        todo!()
+    }
+    
+    fn to_pointer(&self) -> Option<*mut c_void> {
+        Some(self.buffer.as_ptr() as *mut c_void )
     }
 }
