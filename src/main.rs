@@ -9,11 +9,11 @@ mod value_structure;
 mod call;
 mod signatures;
 mod retracer;
-//mod test;
-//#[path ="../helpers/try.rs"]
-//mod r#try;
+mod test;
+#[path ="../helpers/try.rs"]
+mod r#try;
 
-//mod gl_context;
+mod gl_context;
 
 use sdl3::event::Event;
 use sdl3::video::{SwapInterval, Window};

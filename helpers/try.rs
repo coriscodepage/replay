@@ -7487,18 +7487,16 @@ if glretrace::supportsARBShaderObjects {
 }
 
     unsafe { gl::CompileShader(shader) };
-        GLint compile_status = 0;
-        glGetShaderiv(shader, GL_COMPILE_STATUS, &compile_status);
-        if (!compile_status) {
-             retrace::warning(call) << "compilation failed\n";
+        let compile_status = 0;
+        gl::GetShaderiv(shader, gl::COMPILE_STATUS, &compile_status);
+        if compile_status == 0 {
+             println!()"compilation failed");
         }
-        GLint info_log_length = 0;
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length);
-        if (info_log_length > 1) {
-             GLchar *infoLog = new GLchar[info_log_length];
-             glGetShaderInfoLog(shader, info_log_length, NULL, infoLog);
-             retrace::warning(call) << infoLog << "\n";
-             delete [] infoLog;
+        let info_log_length = 0;
+        gl::GetShaderiv(shader, gl::INFO_LOG_LENGTH, &info_log_length);
+        if info_log_length > 1 {
+             let infoLog = vec![0i8; info_log_length].as_mut_ptr();
+             gl::GetShaderInfoLog(shader, info_log_length, std::ptr::null_mut(), infoLog);
         }
 }
 
@@ -7653,20 +7651,18 @@ if glretrace::supportsARBShaderObjects {
 } else {
     program = _program_map[program];
 }
-    gl::GetProgramInfoLog(program, info_log_length, 0, infoLog);
+
     unsafe { gl::LinkProgram(program) };
-        GLint link_status = 0;
-        glGetProgramiv(program, GL_LINK_STATUS, &link_status);
-        if (!link_status) {
-             retrace::warning(call) << "link failed\n";
+        let link_status = 0;
+        gl::GetProgramiv(program, gl::LINK_STATUS, &link_status);
+        if link_status == 0 {
+             println!("link failed");
         }
-        GLint info_log_length = 0;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length);
-        if (info_log_length > 1) {
-             GLchar *infoLog = new GLchar[info_log_length];
-             glGetProgramInfoLog(program, info_log_length, NULL, infoLog);
-             retrace::warning(call) << infoLog << "\n";
-             delete [] infoLog;
+        let info_log_length = 0;
+        gl::GetProgramiv(program, gl::INFO_LOG_LENGTH, &info_log_length);
+        if info_log_length > 1 {
+             let infoLog = vec![0i8; info_log_length].as_mut_ptr();
+             gl::GetProgramInfoLog(program, info_log_length, std::ptr::null_mut(), infoLog);
         }
 }
 
@@ -15730,18 +15726,16 @@ if glretrace::supportsARBShaderObjects {
     length = (call.arg(3)).to_i32().unwrap();
 
     unsafe { gl::ProgramBinary(program, binaryFormat, binary, length) };
-        GLint link_status = 0;
-        glGetProgramiv(program, GL_LINK_STATUS, &link_status);
-        if (!link_status) {
-             retrace::warning(call) << "link failed\n";
+        let link_status = 0;
+        gl::GetProgramiv(program, gl::LINK_STATUS, &link_status);
+        if link_status == 0 {
+             println!("link failed");
         }
-        GLint info_log_length = 0;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length);
-        if (info_log_length > 1) {
-             GLchar *infoLog = new GLchar[info_log_length];
-             glGetProgramInfoLog(program, info_log_length, NULL, infoLog);
-             retrace::warning(call) << infoLog << "\n";
-             delete [] infoLog;
+        let info_log_length = 0;
+        gl::GetProgramiv(program, gl::INFO_LOG_LENGTH, &info_log_length);
+        if info_log_length > 1 {
+             let infoLog = vec![0i8; info_log_length].as_mut_ptr();
+             gl::GetProgramInfoLog(program, info_log_length, std::ptr::null_mut(), infoLog);
         }
 }
 
@@ -19178,19 +19172,17 @@ pub fn retrace_glCreateShaderProgramv(&mut self, call: &mut Call) {
     let _result = unsafe { gl::CreateShaderProgramv(_type, count, strings) };
 
     }
-        GLuint program = _result;
-        GLint link_status = 0;
-        glGetProgramiv(program, GL_LINK_STATUS, &link_status);
-        if (!link_status) {
-             retrace::warning(call) << "link failed\n";
+        let program = _result;
+        let link_status = 0;
+        gl::GetProgramiv(program, gl::LINK_STATUS, &link_status);
+        if link_status == 0 {
+             println!("link failed");
         }
-        GLint info_log_length = 0;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length);
-        if (info_log_length > 1) {
-             GLchar *infoLog = new GLchar[info_log_length];
-             glGetProgramInfoLog(program, info_log_length, NULL, infoLog);
-             retrace::warning(call) << infoLog << "\n";
-             delete [] infoLog;
+        let info_log_length = 0;
+        gl::GetProgramiv(program, gl::INFO_LOG_LENGTH, &info_log_length);
+        if info_log_length > 1 {
+             let infoLog = vec![0i8; info_log_length].as_mut_ptr();
+             gl::GetProgramInfoLog(program, info_log_length, std::ptr::null_mut(), infoLog);
         }
     let _origResult: GLuint;
     _origResult = (*call.ret).to_u32().unwrap();
@@ -20896,18 +20888,16 @@ pub fn retrace_glCompileShaderARB(&mut self, call: &mut Call) {
     shaderObj = _handleARB_map[shaderObj];
 
     unsafe { gl::CompileShaderARB(shaderObj) };
-        GLint compile_status = 0;
-        glGetObjectParameterivARB(shaderObj, GL_OBJECT_COMPILE_STATUS_ARB, &compile_status);
+        let compile_status = 0;
+        gl::GetObjectParameterivARB(shaderObj, gl::OBJECT_COMPILE_STATUS_ARB, &compile_status);
         if (!compile_status) {
              retrace::warning(call) << "compilation failed\n";
         }
-        GLint info_log_length = 0;
-        glGetObjectParameterivARB(shaderObj, GL_OBJECT_INFO_LOG_LENGTH_ARB, &info_log_length);
-        if (info_log_length > 1) {
-             GLchar *infoLog = new GLchar[info_log_length];
-             glGetInfoLogARB(shaderObj, info_log_length, NULL, infoLog);
-             retrace::warning(call) << infoLog << "\n";
-             delete [] infoLog;
+        let info_log_length = 0;
+        gl::GetObjectParameterivARB(shaderObj, gl::OBJECT_INFO_LOG_LENGTH_ARB, &info_log_length);
+        if info_log_length > 1 {
+             let infoLog = vec![0i8; info_log_length].as_mut_ptr();
+             gl::GetInfoLogARB(shaderObj, info_log_length, std::ptr::null_mut(), infoLog);
         }
 }
 
@@ -20943,18 +20933,16 @@ pub fn retrace_glLinkProgramARB(&mut self, call: &mut Call) {
     programObj = _handleARB_map[programObj];
 
     unsafe { gl::LinkProgramARB(programObj) };
-        GLint link_status = 0;
-        glGetObjectParameterivARB(programObj, GL_OBJECT_LINK_STATUS_ARB, &link_status);
-        if (!link_status) {
-             retrace::warning(call) << "link failed\n";
+        let link_status = 0;
+        gl::GetObjectParameterivARB(programObj, gl::OBJECT_LINK_STATUS_ARB, &link_status);
+        if link_status == 0 {
+             println!("link failed");
         }
-        GLint info_log_length = 0;
-        glGetObjectParameterivARB(programObj, GL_OBJECT_INFO_LOG_LENGTH_ARB, &info_log_length);
-        if (info_log_length > 1) {
-             GLchar *infoLog = new GLchar[info_log_length];
-             glGetInfoLogARB(programObj, info_log_length, NULL, infoLog);
-             retrace::warning(call) << infoLog << "\n";
-             delete [] infoLog;
+        let info_log_length = 0;
+        gl::GetObjectParameterivARB(programObj, gl::OBJECT_INFO_LOG_LENGTH_ARB, &info_log_length);
+        if info_log_length > 1 {
+             let infoLog = vec![0i8; info_log_length].as_mut_ptr();
+             gl::GetInfoLogARB(programObj, info_log_length, std::ptr::null_mut(), infoLog);
         }
 }
 
@@ -24113,9 +24101,9 @@ pub fn retrace_glProgramStringARB(&mut self, call: &mut Call) {
     unsafe { gl::ProgramStringARB(target, format, len, string) };
         let error_position: GLint = -1;
         gl::GetIntegerv(gl::PIXEL_PACK_BUFFER_BINDING, &error_position);
-        if (error_position != -1) {
-            const char *error_string = (const char *)glGetString(GL_PROGRAM_ERROR_STRING_ARB);
-            retrace::warning(call) << "error in position " << error_position << ": " << error_string << "\n";
+        if error_position != -1 {
+            let error_string = gl::GetString(gl::PROGRAM_ERROR_STRING_ARB);
+            println!("error in position {}: {}", error_position, error_string);
         }
 }
 
@@ -35787,19 +35775,17 @@ pub fn retrace_glCreateShaderProgramEXT(&mut self, call: &mut Call) {
     let _result = unsafe { gl::CreateShaderProgramEXT(_type, string) };
 
     }
-        GLuint program = _result;
-        GLint link_status = 0;
-        glGetProgramiv(program, GL_LINK_STATUS, &link_status);
-        if (!link_status) {
-             retrace::warning(call) << "link failed\n";
+        let program = _result;
+        let link_status = 0;
+        gl::GetProgramiv(program, gl::LINK_STATUS, &link_status);
+        if link_status == 0 {
+             println!("link failed");
         }
-        GLint info_log_length = 0;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length);
-        if (info_log_length > 1) {
-             GLchar *infoLog = new GLchar[info_log_length];
-             glGetProgramInfoLog(program, info_log_length, NULL, infoLog);
-             retrace::warning(call) << infoLog << "\n";
-             delete [] infoLog;
+        let info_log_length = 0;
+        gl::GetProgramiv(program, gl::INFO_LOG_LENGTH, &info_log_length);
+        if info_log_length > 1 {
+             let infoLog = vec![0i8; info_log_length].as_mut_ptr();
+             gl::GetProgramInfoLog(program, info_log_length, std::ptr::null_mut(), infoLog);
         }
     let _origResult: GLuint;
     _origResult = (*call.ret).to_u32().unwrap();
@@ -35886,19 +35872,17 @@ pub fn retrace_glCreateShaderProgramvEXT(&mut self, call: &mut Call) {
     let _result = unsafe { gl::CreateShaderProgramvEXT(_type, count, strings) };
 
     }
-        GLuint program = _result;
-        GLint link_status = 0;
-        glGetProgramiv(program, GL_LINK_STATUS, &link_status);
-        if (!link_status) {
-             retrace::warning(call) << "link failed\n";
+        let program = _result;
+        let link_status = 0;
+        gl::GetProgramiv(program, gl::LINK_STATUS, &link_status);
+        if link_status == 0 {
+             println!("link failed");
         }
-        GLint info_log_length = 0;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length);
-        if (info_log_length > 1) {
-             GLchar *infoLog = new GLchar[info_log_length];
-             glGetProgramInfoLog(program, info_log_length, NULL, infoLog);
-             retrace::warning(call) << infoLog << "\n";
-             delete [] infoLog;
+        let info_log_length = 0;
+        gl::GetProgramiv(program, gl::INFO_LOG_LENGTH, &info_log_length);
+        if info_log_length > 1 {
+             let infoLog = vec![0i8; info_log_length].as_mut_ptr();
+             gl::GetProgramInfoLog(program, info_log_length, std::ptr::null_mut(), infoLog);
         }
     let _origResult: GLuint;
     _origResult = (*call.ret).to_u32().unwrap();
@@ -44431,9 +44415,9 @@ pub fn retrace_glLoadProgramNV(&mut self, call: &mut Call) {
     unsafe { gl::LoadProgramNV(target, id, len, program) };
         let error_position: GLint = -1;
         gl::GetIntegerv(gl::PIXEL_PACK_BUFFER_BINDING, &error_position);
-        if (error_position != -1) {
-            const char *error_string = (const char *)glGetString(GL_PROGRAM_ERROR_STRING_ARB);
-            retrace::warning(call) << "error in position " << error_position << ": " << error_string << "\n";
+        if error_position != -1 {
+            let error_string = gl::GetString(gl::PROGRAM_ERROR_STRING_ARB);
+            println!("error in position {}: {}", error_position, error_string);
         }
 }
 
@@ -46254,18 +46238,16 @@ if glretrace::supportsARBShaderObjects {
     length = (call.arg(3)).to_i32().unwrap();
 
     unsafe { gl::ProgramBinaryOES(program, binaryFormat, binary, length) };
-        GLint link_status = 0;
-        glGetProgramiv(program, GL_LINK_STATUS, &link_status);
-        if (!link_status) {
-             retrace::warning(call) << "link failed\n";
+        let link_status = 0;
+        gl::GetProgramiv(program, gl::LINK_STATUS, &link_status);
+        if link_status == 0 {
+             println!("link failed");
         }
-        GLint info_log_length = 0;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &info_log_length);
-        if (info_log_length > 1) {
-             GLchar *infoLog = new GLchar[info_log_length];
-             glGetProgramInfoLog(program, info_log_length, NULL, infoLog);
-             retrace::warning(call) << infoLog << "\n";
-             delete [] infoLog;
+        let info_log_length = 0;
+        gl::GetProgramiv(program, gl::INFO_LOG_LENGTH, &info_log_length);
+        if info_log_length > 1 {
+             let infoLog = vec![0i8; info_log_length].as_mut_ptr();
+             gl::GetProgramInfoLog(program, info_log_length, std::ptr::null_mut(), infoLog);
         }
 }
 
