@@ -1,4 +1,4 @@
-use std::{error::Error, ffi::c_void, ptr::null_mut, rc::Rc, time::Duration};
+use std::{error::Error, ffi::c_void, ptr::{self, null_mut}, rc::Rc, time::Duration};
 
 use gl::types::{GLenum, GLint};
 use sdl3::{
@@ -79,7 +79,6 @@ pub fn test() {
     let mut sdl_ctx = SdlContext::new("Okienko :3", 800, 600).unwrap();
     unsafe { gl::Viewport(0, 0, 800, 600) };
     let mut glon = gl_context::Context::new(Rc::clone(&sdl_ctx.gl_context));
-    glon.features();
     sdl_ctx.window.gl_make_current(&sdl_ctx.gl_context).unwrap();
     sdl_ctx.window.show();
     'running: loop {

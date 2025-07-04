@@ -6,6 +6,6 @@ a.out
 *.code-workspace
 Cargo.lock
 *.json.gz
-try.rs
+/helpers/try.rs
 /helpers/__pycache__
 /helpers/specs/__pycache__

@@ -1,8 +1,8 @@
 use std::{collections::BTreeMap, error::Error, fmt::Display, panic::Location};
 
-use crate::call::Call;
+use crate::{call::Call, r#try::GlRetracer};
 
-pub type Callback = fn(&mut Call);
+pub type Callback = fn(&mut GlRetracer, &mut Call);
 
 struct Entry {
     name: String,

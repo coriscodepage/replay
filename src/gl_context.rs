@@ -44,13 +44,14 @@ impl Context {
         Rc::clone(&self.gl_ctx)
     }
 
-    pub fn features(&mut self) {
+    pub fn features(&mut self, feature_name: &'static str) -> bool{
         unsafe {
             let extensions = gl::GetString(gl::EXTENSIONS);
             if !extensions.is_null() {
                 let ext_str = std::ffi::CStr::from_ptr(extensions as *const i8).to_string_lossy();
                 println!("OpenGL Extensions: {}", ext_str);
             }
+            true
         }
     }
 }

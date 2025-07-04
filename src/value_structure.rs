@@ -2,7 +2,9 @@ use std::{fmt::Debug, os::raw::c_void, rc::Rc};
 
 use crate::signatures;
 
-pub trait Value: Debug {
+use std::any::Any;
+
+pub trait Value: Debug + Any {
     fn to_bool(&self) -> Option<bool>;
     fn to_u32(&self) -> Option<u32>;
     fn to_i32(&self) -> Option<i32>;
@@ -10,6 +12,7 @@ pub trait Value: Debug {
     fn to_f64(&self) -> Option<f64>;
     fn to_array(&self) -> Option<&Array>;
     fn to_pointer(&self) -> Option<*mut c_void>;
+    fn as_any(&self) -> &dyn Any;
 }
 
 #[derive(Debug)]
@@ -20,7 +23,7 @@ impl Value for None {
         None
     }
     fn to_u32(&self) -> Option<u32> {
-        Some(0)
+        Some(4)
     }
     fn to_f32(&self) -> Option<f32> {
         None
@@ -35,9 +38,13 @@ impl Value for None {
     fn to_array(&self) -> Option<&Array> {
         todo!()
     }
-    
+
     fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -77,9 +84,13 @@ impl Value for Bool {
     fn to_array(&self) -> Option<&Array> {
         todo!()
     }
-    
+
     fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -107,9 +118,13 @@ impl Value for U32 {
     fn to_array(&self) -> Option<&Array> {
         todo!()
     }
-    
+
     fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -140,9 +155,13 @@ impl Value for I32 {
     fn to_array(&self) -> Option<&Array> {
         todo!()
     }
-    
+
     fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -170,9 +189,13 @@ impl Value for Float {
     fn to_array(&self) -> Option<&Array> {
         todo!()
     }
-    
+
     fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -200,9 +223,13 @@ impl Value for Double {
     fn to_array(&self) -> Option<&Array> {
         todo!()
     }
-    
+
     fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -230,9 +257,13 @@ impl Value for VString {
     fn to_array(&self) -> Option<&Array> {
         todo!()
     }
-    
+
     fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -246,7 +277,7 @@ impl Value for Pointer {
         Some(!self.value.is_null())
     }
     fn to_u32(&self) -> Option<u32> {
-        todo!()
+        Some(5)
     }
     fn to_f32(&self) -> Option<f32> {
         todo!()
@@ -260,9 +291,13 @@ impl Value for Pointer {
     fn to_array(&self) -> Option<&Array> {
         todo!()
     }
-    
+
     fn to_pointer(&self) -> Option<*mut c_void> {
         Some(self.value)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -290,9 +325,13 @@ impl Value for Array {
     fn to_array(&self) -> Option<&Array> {
         Some(self)
     }
-    
+
     fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -327,9 +366,13 @@ impl Value for Enum {
     fn to_array(&self) -> Option<&Array> {
         todo!()
     }
-    
+
     fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -358,9 +401,13 @@ impl Value for Struct {
     fn to_array(&self) -> Option<&Array> {
         todo!()
     }
-    
+
     fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -389,9 +436,13 @@ impl Value for Bitmask {
     fn to_array(&self) -> Option<&Array> {
         todo!()
     }
-    
+
     fn to_pointer(&self) -> Option<*mut c_void> {
         todo!()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -407,7 +458,7 @@ impl Value for Blob {
         todo!()
     }
     fn to_u32(&self) -> Option<u32> {
-        todo!()
+        Some(6)
     }
     fn to_f32(&self) -> Option<f32> {
         todo!()
@@ -421,8 +472,12 @@ impl Value for Blob {
     fn to_array(&self) -> Option<&Array> {
         todo!()
     }
-    
+
     fn to_pointer(&self) -> Option<*mut c_void> {
-        Some(self.buffer.as_ptr() as *mut c_void )
+        Some(self.buffer.as_ptr() as *mut c_void)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }

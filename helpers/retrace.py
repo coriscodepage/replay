@@ -39,6 +39,8 @@ import specs.stdapi as stdapi
 class UnsupportedType(Exception):
     pass
 
+GLOB_ARRS = ["_list_map","_texture_map","_query_map","_buffer_map","_program_map","_shader_map","_location_map","_fence_map","_sync_map","_arrayAPPLE_map","_textureHandle_map","_sampler_map","_imageHandle_map","_feedback_map","_framebuffer_map","_renderbuffer_map","_array_map","_pipeline_map","_handleARB_map","_subroutine_map","_eglImageOES_map","_uniformBlock_map","_programARB_map","_fragmentShaderATI_map","_region_map"]
+
 
 def lookupHandle(handle, value, lval=False):
     if handle.key is None:
@@ -127,7 +129,7 @@ class ValueDeserializer(stdapi.Visitor, stdapi.ExpanderMixin):
             print('    %s = (%s).to_u32().unwrap().try_into().unwrap();' % (lvalue, rvalue))
 
     def visitBitmask(self, bitmask, lvalue, rvalue):
-        print('    %s = (%s).to_u32().unwrap();' % (lvalue, rvalue))
+        print('    %s = (%s).to_u32().unwrap().try_into().unwrap();' % (lvalue, rvalue))
 
     def visitArray(self, array, lvalue, rvalue):
         tmp = '_a_' + array.tag + '_' + str(self.seq)
@@ -159,7 +161,7 @@ class ValueDeserializer(stdapi.Visitor, stdapi.ExpanderMixin):
         finally:
             print('        }')
             print('    }')
-            print("    let params = params.as_mut_ptr();")
+            print("    let %s = %s.as_mut_ptr();" % (lvalue, lvalue))
 
     def visitAttribArray(self, array, lvalue, rvalue):
         tmp = '_a_' + array.tag + '_' + str(self.seq)
@@ -197,13 +199,16 @@ class ValueDeserializer(stdapi.Visitor, stdapi.ExpanderMixin):
         #    print('    }')
 
     def visitIntPointer(self, pointer, lvalue, rvalue):
-        print('    let %s = (%s).to_pointer().unwrap() as *mut c_void;' % (lvalue, rvalue))
+        if str(lvalue).find('indices') == -1:
+            print('    let %s = (%s).to_pointer().unwrap() as *mut c_void;' % (lvalue, rvalue))
+        else:
+            print('            %s = (%s).to_pointer().unwrap() as *mut c_void;' % (lvalue, rvalue))
 
     def visitObjPointer(self, pointer, lvalue, rvalue):
         print('    %s = retrace::asObjPointer<%s>(call, %s);' % (lvalue, pointer.type, rvalue))
 
     def visitLinearPointer(self, pointer, lvalue, rvalue):
-        print('    %s = static_cast<%s>(retrace::toPointer(%s));' % (lvalue, pointer, rvalue))
+        print('    %s = region::to_pointer(%s);' % (lvalue, pointer, rvalue))
 
     def visitReference(self, reference, lvalue, rvalue):
         self.visit(reference.type, lvalue, rvalue);
@@ -214,16 +219,16 @@ class ValueDeserializer(stdapi.Visitor, stdapi.ExpanderMixin):
         new_lvalue = lookupHandle(handle, lvalue)
         shaderObject = new_lvalue.startswith('_program_map') or new_lvalue.startswith('_shader_map')
         if shaderObject:
-            print('if glretrace::supportsARBShaderObjects {')
+            print('if supportsARBShaderObjects {')
             #print('    if (retrace::verbosity >= 2) {')
             #print('        std::cout << "%s " << size_t(%s) << " <- " << size_t(_handleARB_map[%s]) << "\\n";' % (handle.name, lvalue, lvalue))
             #print('    }')
-            print('    %s = _handleARB_map[%s];' % (lvalue, lvalue))
+            print('    %s = self._handleARB_map[%s];' % (lvalue, lvalue))
             print('} else {')
         #print('    if (retrace::verbosity >= 2) {')
         #print('        std::cout << "%s " << size_t(%s) << " <- " << size_t(%s) << "\\n";' % (handle.name, lvalue, new_lvalue))
         #print('    }')
-        print('    %s = %s;' % (lvalue, new_lvalue))
+        print('    %s = %s;' % (lvalue, ('self.' if str(new_lvalue)[0] == '_' else '') + str(new_lvalue).replace('reinterpret_cast<uintptr_t>(glretrace::getCurrentContext())', 'DUMMY_CONTEXT')))
         if shaderObject:
             print('}')
     
@@ -231,7 +236,7 @@ class ValueDeserializer(stdapi.Visitor, stdapi.ExpanderMixin):
         print('    let %s = (%s).to_pointer().unwrap() as *mut c_void;' % (lvalue, rvalue))
     
     def visitString(self, string, lvalue, rvalue):
-        print('    %s = (%s)((%s).to_string().unwrap());' % (lvalue, string.expr, rvalue))
+        print('    %s = (%s).to_string().unwrap();' % (lvalue, rvalue))
 
     seq = 0
 
@@ -286,7 +291,7 @@ class OpaqueValueDeserializer(ValueDeserializer):
     in the context of handles.'''
 
     def visitOpaque(self, opaque, lvalue, rvalue):
-        print('    %s = static_cast<%s>(retrace::toPointer(%s));' % (lvalue, opaque, rvalue))
+        print('    %s = region::to_pointer(%s);' % (lvalue, rvalue))
 
 
 class SwizzledValueRegistrator(stdapi.Visitor, stdapi.ExpanderMixin):
@@ -310,7 +315,7 @@ class SwizzledValueRegistrator(stdapi.Visitor, stdapi.ExpanderMixin):
         print('    if (_a%s) {' % (array.tag))
         length = '_a%s.values.len()' % array.tag
         index = '_j' + array.tag
-        print('        for {i} in 0..length {{'.format(i = index, length = length))  ##print('        for (size_t {i} = 0; {i} < {length}; ++{i}) {{'.format(i = index, length = length))
+        print('        for {i} in 0..{length} {{'.format(i = index, length = length))  ##print('        for (size_t {i} = 0; {i} < {length}; ++{i}) {{'.format(i = index, length = length))
         try:
             self.visit(array.type, '%s[%s]' % (lvalue, index), '_a%s.values[%s]' % (array.tag, index))
         finally:
@@ -329,12 +334,12 @@ class SwizzledValueRegistrator(stdapi.Visitor, stdapi.ExpanderMixin):
         pass
     
     def visitObjPointer(self, pointer, lvalue, rvalue):
-        print(r'    retrace::addObj(call, %s, %s);' % (rvalue, lvalue))
+        print(r'    region::add_obj(call, %s, %s);' % (rvalue, lvalue))
     
     def visitLinearPointer(self, pointer, lvalue, rvalue):
         assert pointer.size is not None
         if pointer.size is not None:
-            print(r'    retrace::addRegion(call, (%s).toUIntPtr(), %s, %s);' % (rvalue, lvalue, pointer.size))
+            print(r'    region::add_region(call, (%s).toUIntPtr(), %s, %s);' % (rvalue, lvalue, pointer.size))
 
     def visitReference(self, reference, lvalue, rvalue):
         pass
@@ -346,13 +351,13 @@ class SwizzledValueRegistrator(stdapi.Visitor, stdapi.ExpanderMixin):
             rvalue = "_origResult"
             entry = lookupHandle(handle, rvalue, True)
             if (entry.startswith('_program_map') or entry.startswith('_shader_map')):
-                print('if (glretrace::supportsARBShaderObjects) {')
-                print('    _handleARB_map[%s] = %s;' % (rvalue, lvalue))
+                print('if supportsARBShaderObjects {')
+                print('    self._handleARB_map[%s] = %s;' % (rvalue, lvalue))
                 print('} else {')
                 print('    %s = %s;' % (entry, lvalue))
                 print('}')
             else:
-                print("    %s = %s;" % (entry, lvalue))
+                print("    %s = %s; " % (('self.' if str(entry)[0] == '_' else '') + str(entry).replace('reinterpret_cast<uintptr_t>(glretrace::getCurrentContext())', 'DUMMY_CONTEXT'), lvalue))
             #if entry.startswith('_textureHandle_map') or entry.startswith('_imageHandle_map'):
             #    print('    if (%s != %s) {' % (rvalue, lvalue))
             #    print('        std::cout << "Bindless handle doesn\'t match, GPU failures ahead.\\n";')
@@ -385,12 +390,12 @@ class SwizzledValueRegistrator(stdapi.Visitor, stdapi.ExpanderMixin):
         tmp = '_s_' + struct.tag + '_' + str(self.seq)
         self.seq += 1
 
-        print('    let %s = (%s).toStruct();' % (tmp, rvalue))
+        print('    let %s = (%s).to_struct();' % (tmp, rvalue))
         #print('    assert(%s);' % (tmp,))
         #print('    (void)%s;' % (tmp,))
         for i in range(len(struct.members)):
             member = struct.members[i]
-            self.visitMember(member, lvalue, '*%s.members[%s]' % (tmp, i))
+            self.visitMember(member, lvalue, '%s.members[%s]' % (tmp, i))
     
     def visitPolymorphic(self, polymorphic, lvalue, rvalue):
         assert polymorphic.defaultType is not None
@@ -467,9 +472,9 @@ class Retracer:
             print(r'    }')
 
     def deserializeThisPointer(self, interface):
-        print(r'    %s *_this;' % (interface.name,))
-        print(r'    _this = retrace::asObjPointer<%s>(call, call.arg(0));' % (interface.name,))
-        print(r'    if (!_this) {')
+        #print(r'    %s *_this;' % (interface.name,))
+        print(r'    let _this = region::to_obj_pointer(call, call.arg(0));' % (interface.name,))
+        print(r'    if _this.is_null() {')
         print(r'        return;')
         print(r'    }')
 
@@ -482,20 +487,24 @@ class Retracer:
                 arg.name = "_type"
             elif arg.name == "ref":
                 arg.name = "_ref"
+            elif arg.name == "in":
+                arg.name = "_in"
+            elif arg.name in GLOB_ARRS:
+                arg.name = 'self.' + arg.name
             arg_type = arg.type.mutable() #TODO: Make this be rustable
             arg_type.expr = arg_type.expr.replace('const', '').strip()
             if arg.name != "pixels":
                 if str(arg_type).find('*') == -1:
                     print('    let mut %s: %s;' % (arg.name, arg_type))
                 else:
-                    print('    let %s: &mut [%s];' % (arg.name, str(arg_type).replace('*', '').strip()))
+                    print('    let %s: &mut [%s];' % (arg.name, str(arg_type).replace('*', '').replace('void', 'c_void').strip()))
             rvalue = 'call.arg(%u)' % (arg.index,)
             lvalue = arg.name
             try:
                 self.extractArg(function, arg, arg_type, lvalue, rvalue)
             except UnsupportedType:
                 success =  False
-                print('    memset(&%s, 0, sizeof %s); // FIXME' % (arg.name, arg.name))
+                print('//FIXME    memset(&%s, 0, sizeof %s); ' % (arg.name, arg.name))
             print()
 
         if not success:
@@ -664,15 +673,15 @@ class Retracer:
         types = api.getAllTypes()
         handles = [type for type in types if isinstance(type, stdapi.Handle)]
         handle_names = set()
-        print("struct GlRetracer {") 
-        print("context: Context,")
+        print("pub struct GlRetracer {") 
+        print("    context: Context,")
         for handle in handles:
             if handle.name not in handle_names:
                 if handle.key is None:
-                    print('static retrace::map<%s> _%s_map,' % (handle.type, handle.name))
+                    print('    _%s_map: region::Map<%s>,' % (handle.name, handle.type))
                 else:
                     key_name, key_type = handle.key
-                    print('static std::map<%s, retrace::map<%s> > _%s_map,' % (key_type, handle.type, handle.name))
+                    print('    _%s_map: HashMap<%s, region::Map<%s> >,' % (handle.name, str(key_type).replace('uintptr_t', 'usize'), handle.type))
                 handle_names.add(handle.name)
         print("}")
         print()
@@ -687,6 +696,9 @@ class Retracer:
             for method in interface.methods:
                 if method.sideeffects and not method.internal:
                     self.retraceInterfaceMethod(interface, method)
+        print("""
+    fn ignore(&mut self, call: &Call) {}
+""")
         print("}")
         print()
         print('static %s: [(&\'static str, Callback); %d] = [' % (self.table_name, len(functions)))
@@ -694,17 +706,17 @@ class Retracer:
             if not function.internal:
                 sigName = function.sigName()
                 if function.sideeffects:
-                    print('    ("%s", &retrace_%s),' % (sigName, self.makeFunctionId(function)))
+                    print('    ("%s", GlRetracer::retrace_%s),' % (sigName, self.makeFunctionId(function)))
                 else:
-                    print('    ("%s", &retrace::ignore),' % (sigName,))
+                    print('    ("%s", GlRetracer::ignore),' % (sigName,))
         for interface in interfaces:
             for base, method in interface.iterBaseMethods():
                 sigName = method.sigName()
                 if method.sideeffects:
-                    print('    ("%s::%s", &retrace_%s__%s),' % (interface.name, sigName, base.name, self.makeFunctionId(method)))
+                    print('    ("%s::%s", retrace_%s__%s),' % (interface.name, sigName, base.name, self.makeFunctionId(method)))
                 else:
-                    print('    ("%s::%s", &retrace::ignore),' % (interface.name, sigName))
+                    print('    ("%s::%s", ignore),' % (interface.name, sigName))
         #print('    {NULL, NULL}')
         print('];')
-        print()
+
 
