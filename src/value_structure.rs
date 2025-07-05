@@ -1,4 +1,6 @@
-use std::{fmt::Debug, os::raw::c_void, rc::Rc};
+use std::{fmt::Debug, os::raw::c_void, rc::Rc, ffi::CString};
+
+use libc::c_char;
 
 use crate::signatures;
 
@@ -13,6 +15,7 @@ pub trait Value: Debug + Any {
     fn to_array(&self) -> Option<&Array>;
     fn to_pointer(&self) -> Option<*mut c_void>;
     fn as_any(&self) -> &dyn Any;
+    fn to_string(&self) -> *mut c_char;
 }
 
 #[derive(Debug)]
@@ -45,6 +48,10 @@ impl Value for None {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+    
+    fn to_string(&self) -> *mut c_char {
+        todo!()
     }
 }
 
@@ -92,6 +99,10 @@ impl Value for Bool {
     fn as_any(&self) -> &dyn Any {
         self
     }
+    
+    fn to_string(&self) -> *mut c_char {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
@@ -125,6 +136,10 @@ impl Value for U32 {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+    
+    fn to_string(&self) -> *mut c_char {
+        todo!()
     }
 }
 
@@ -163,6 +178,10 @@ impl Value for I32 {
     fn as_any(&self) -> &dyn Any {
         self
     }
+    
+    fn to_string(&self) -> *mut c_char {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
@@ -196,6 +215,10 @@ impl Value for Float {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+    
+    fn to_string(&self) -> *mut c_char {
+        todo!()
     }
 }
 
@@ -231,6 +254,10 @@ impl Value for Double {
     fn as_any(&self) -> &dyn Any {
         self
     }
+    
+    fn to_string(&self) -> *mut c_char {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
@@ -264,6 +291,9 @@ impl Value for VString {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+    fn to_string(&self) -> *mut c_char {
+        CString::new(self.value.clone()).unwrap().into_raw()
     }
 }
 
@@ -299,6 +329,10 @@ impl Value for Pointer {
     fn as_any(&self) -> &dyn Any {
         self
     }
+    
+    fn to_string(&self) -> *mut c_char {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
@@ -332,6 +366,10 @@ impl Value for Array {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+    
+    fn to_string(&self) -> *mut c_char {
+        todo!()
     }
 }
 
@@ -374,6 +412,10 @@ impl Value for Enum {
     fn as_any(&self) -> &dyn Any {
         self
     }
+    
+    fn to_string(&self) -> *mut c_char {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
@@ -408,6 +450,10 @@ impl Value for Struct {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+    
+    fn to_string(&self) -> *mut c_char {
+        todo!()
     }
 }
 
@@ -444,6 +490,10 @@ impl Value for Bitmask {
     fn as_any(&self) -> &dyn Any {
         self
     }
+    
+    fn to_string(&self) -> *mut c_char {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
@@ -479,5 +529,9 @@ impl Value for Blob {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+    
+    fn to_string(&self) -> *mut c_char {
+        todo!()
     }
 }

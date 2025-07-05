@@ -177,7 +177,7 @@ class GlRetracer(Retracer):
             print(r'    if self.context.features("query_buffer_object") {')
             print(r'        unsafe { gl::GetIntegerv(gl::QUERY_BUFFER_BINDING, &_query_buffer) };')
             print(r'    }')
-            print(r'    if (_query_buffer == 0 && retrace::queryHandling == retrace::QUERY_SKIP) {')
+            print(r'    if (_query_buffer == 0 && queryHandling == QUERY_SKIP) {')
             print(r'        return;')
             print(r'    }')
             print('\'wait_for_query_result: loop {')
@@ -210,7 +210,7 @@ class GlRetracer(Retracer):
            print(r'        }} else if queryHandling == QUERY_RUN_AND_CHECK_RESULT {')
            print(r'            let diff = (expect as i64 - retval as i64).abs(); ')
            print(r'            if diff > 0 as i64 {')
-           print(r'                println!("Warning: query returned {}  but trace contained {} (tol = {})", retval, expect, retrace::queryTolerance);')
+           print(r'                println!("Warning: query returned {}  but trace contained {} (tol = {})", retval, expect, queryTolerance);')
            print(r'            }')
            print(r'        }')
            print('    break \'wait_for_query_result;')
@@ -243,15 +243,15 @@ class GlRetracer(Retracer):
             # TODO: https://github.com/apitrace/apitrace/commit/2a83ddd4f67014e2aacf99c6b203fd3f6b13c4f3#r130319306
             print(r'        return;')
         elif function.name == "glGetTexnImage":
-            print(r'     buffer.resize(call.arg(4).to_u32().unwrap(), 0);');
+            print(r'     buffer.resize(call.arg(4).to_u32().unwrap() as usize, 0);');
         elif function.name == "glGetTextureImage":
-            print(r'     buffer.resize(call.arg(4).to_u32().unwrap(), 0);');
+            print(r'     buffer.resize(call.arg(4).to_u32().unwrap() as usize, 0);');
         elif function.name == "glReadPixels":
             print(r'     let _w = call.arg(2).to_i32().unwrap();')
             print(r'     let _h = call.arg(3).to_i32().unwrap();')
-            print(r'     buffer.resize(_w * _h * 64, 0);')
+            print(r'     buffer.resize(_w as usize * _h as usize * 64, 0);')
         elif function.name == "glReadnPixels":
-            print(r'     buffer.resize(call.arg(6).to_i32().unwrap(), 0);')
+            print(r'     buffer.resize(call.arg(6).to_i32().unwrap() as usize, 0);')
             data_param_name = "data"
         else:
             print(r'    return;')
@@ -259,19 +259,19 @@ class GlRetracer(Retracer):
             return
 
         print(r'    }')
-        print('    {} = buffer.data();'.format(data_param_name))
+        print('    {} = buffer.as_mut_ptr() as *mut c_void;'.format(data_param_name))
 
 
     def invokeFunction(self, function):
         if function.name == "glGetActiveUniformBlockName":
             print('    let name_buf = vec![GLchar ;bufSize];')
             print('    uniformBlockName = name_buf.data();')
-            print('    let traced_name = (call.arg(4)).to_string().unwrap();')
+            print('    let traced_name = (call.arg(4)).to_string();')
             print('    glretrace::mapUniformBlockName(program, (call.arg(1)).to_i32().unwrap(), traced_name, _uniformBlock_map);')
         if function.name == "glGetProgramResourceName":
             print('    let name_buf = vec![GLchar ;bufSize];')
             print('    name = name_buf.data();')
-            print('    let traced_name = (call.arg(5)).to_string().unwrap();')
+            print('    let traced_name = (call.arg(5)).to_string();')
             print('    glretrace::trackResourceName(program, programInterface, index, traced_name);')
         if function.name == "glGetProgramResourceiv":
             print('    glretrace::mapResourceLocation(program, programInterface, index, call.arg(4).to_array().unwrap(), call.arg(7).to_array().unwrap(), _location_map);')
@@ -281,7 +281,7 @@ class GlRetracer(Retracer):
         if function.name == "glViewportArrayv":
             # We are concerned about drawables so only care for the first viewport
             print('    if first == 0 && count > 0 {')
-            print('        let x = v[0];\nlet y = v[1];\nlet w = v[2];\nlet h = v[3];')
+            print('        let x = _v[0];\nlet y = _v[1];\nlet w = _v[2];\nlet h = _v[3];')
             print('        glretrace::updateDrawable(x + w, y + h);')
             print('    }')
         if function.name == "glViewportIndexedf":
@@ -290,7 +290,7 @@ class GlRetracer(Retracer):
             print('    }')
         if function.name == "glViewportIndexedfv":
             print('    if index == 0 {')
-            print('        let x = v[0];\nlet y = v[1];\nlet w = v[2];\nlet h = v[3];')
+            print('        let x = _v[0];\nlet y = _v[1];\nlet w = _v[2];\nlet h = _v[3];')
             print('        glretrace::updateDrawable(x + w, y + h);')
             print('    }')
         if function.name in ('glBlitFramebuffer', 'glBlitFramebufferEXT'):
@@ -329,10 +329,10 @@ class GlRetracer(Retracer):
                 pass
             else:
                 assert False
-            print(r'        if (ptr) {')
-            print(r'            retrace::delRegionByPointer(ptr);')
+            print(r'        if !ptr.is_null() {')
+            print(r'            region::del_region_by_pointer(ptr);')
             print(r'        } else {')
-            print(r'            retrace::warning(call) << "failed to get mapped pointer\n";')
+            print(r'            println!("failed to get mapped pointer");')
             print(r'        }')
 
         # Implicit destruction of buffer mappings
@@ -342,11 +342,11 @@ class GlRetracer(Retracer):
             print(r'    if self.context.features("ARB_direct_state_access") {')
             print(r'        for i in 0..n {')
             print(r'            let buffer = buffers[i];')
-            print(r'            if buffer != 0 && gl::IsBuffer(buffer) {')
+            print(r'            if buffer != 0 && unsafe{ gl::IsBuffer(buffer) }{')
             print(r'                let ptr = ptr::null_mut() as *mut c_void;')
             print(r'                unsafe { gl::GetNamedBufferPointerv(buffers[i], gl::BUFFER_MAP_POINTER, &ptr) };')
-            print(r'                if ptr != ptr::null_mut() as *mut c_void {')
-            print(r'                    retrace::delRegionByPointer(ptr);')
+            print(r'                if !ptr.is_null() {')
+            print(r'                    region::del_region_by_pointer(ptr);')
             print(r'                }')
             print(r'            }')
             print(r'        }')
@@ -465,9 +465,9 @@ class GlRetracer(Retracer):
             print(r'        self.context.currentProgram = glGetHandleARB(GL_PROGRAM_OBJECT_ARB);')
             #print(r'    }')
         if function.name in ('glBindProgramPipeline', 'glBindProgramPipelineEXT'):
-            print(r'    if (self.context) {')
+            #print(r'    if (self.context) {')
             print(r'        self.context.currentPipeline = pipeline;')
-            print(r'    }')
+            #print(r'    }')
 
         # Ensure this context flushes before switching to another thread to
         # prevent deadlock.
@@ -540,9 +540,9 @@ class GlRetracer(Retracer):
             if function.name == 'glCompileShaderARB':
                 print(r'        let compile_status = 0;')
                 print(r'        unsafe { gl::GetObjectParameterivARB(shaderObj, gl::OBJECT_COMPILE_STATUS_ARB, &compile_status) };')
-                print(r'        if (!compile_status) {')
-                print(r'             retrace::warning(call) << "compilation failed\n";')
-                print(r'        }')
+                #print(r'        if (!compile_status) {')
+                #print(r'             retrace::warning(call) << "compilation failed\n";')
+                #print(r'        }')
                 print(r'        let info_log_length = 0;')
                 print(r'        unsafe { gl::GetObjectParameterivARB(shaderObj, gl::OBJECT_INFO_LOG_LENGTH_ARB, &info_log_length) };')
                 print(r'        if info_log_length > 1 {')
@@ -554,9 +554,9 @@ class GlRetracer(Retracer):
             if function.name == 'glLinkProgramARB':
                 print(r'        let link_status = 0;')
                 print(r'        unsafe { gl::GetObjectParameterivARB(programObj, gl::OBJECT_LINK_STATUS_ARB, &link_status) };')
-                print(r'        if link_status == 0 {')
-                print(r'             println!("link failed");')
-                print(r'        }')
+                #print(r'        if link_status == 0 {')
+                #print(r'             println!("link failed");')
+                #print(r'        }')
                 print(r'        let info_log_length = 0;')
                 print(r'        unsafe { gl::GetObjectParameterivARB(programObj, gl::OBJECT_INFO_LOG_LENGTH_ARB, &info_log_length) };')
                 print(r'        if info_log_length > 1 {')
@@ -610,7 +610,7 @@ class GlRetracer(Retracer):
 
     def extractArg(self, function, arg, arg_type, lvalue, rvalue):
         if function.name in self.array_pointer_function_names and arg.name == 'pointer':
-            print('    %s = region::to_pointer(%s, true);' % (lvalue, rvalue))
+            print('    %s = region::to_pointer(%s, true) as *mut c_void;' % (lvalue, rvalue))
             return
 
         if self.draw_elements_function_regex.match(function.name) and arg.name == 'indices' or\
@@ -627,11 +627,12 @@ class GlRetracer(Retracer):
         if function.name.startswith('glGetQueryObject') and arg.output:
             pointer_type = "%s" % (arg_type)
             basetype = pointer_type.split(" ")[0]
+            print('    let %s: *mut %s;' % (lvalue, basetype))
             print('    let retval: %s = 0;' % (basetype))
             print('    if _query_buffer != 0 {')
-            print('        %s = (%s).to_pointer();' % (lvalue, rvalue))
+            print('        %s = (%s).to_pointer().map(|ptr| ptr as *mut %s).unwrap_or_else(|| std::ptr::null_mut());' % (lvalue, rvalue, basetype))
             print('    } else {')
-            print('        %s = retval };' % (lvalue))
+            print('        %s = retval as *mut %s };' % (lvalue, basetype))
             return
 
         if (arg.type.depends(glapi.GLlocation) or \
@@ -642,6 +643,7 @@ class GlRetracer(Retracer):
 
         if arg.type is glapi.GLlocationARB \
            and 'programObj' not in function.argNames():
+            print('    let programObj = 0;')
             print('    let programObj = unsafe { gl::GetHandleARB(gl::PROGRAM_OBJECT_ARB) };')
 
         Retracer.extractArg(self, function, arg, arg_type, lvalue, rvalue)
@@ -675,15 +677,16 @@ if __name__ == '__main__':
 
 use std::{collections::HashMap, ffi::c_void, ptr};
           
-use  gl::types::{GLbitfield, GLboolean, GLbyte, GLdouble, GLeglImageOES, GLenum, GLfixed, GLfloat, GLhalfNV, GLhandleARB, GLint, GLint64, GLintptr, GLshort, GLsizei, GLsizeiptr, GLsync, GLubyte, GLuint, GLuint64, GLushort, GLvoid};
+use  gl::types::{GLbitfield, GLboolean, GLbyte, GLchar, GLcharARB, GLclampd, GLclampf, GLclampx, GLdouble, GLeglImageOES, GLenum, GLfixed, GLfloat, GLhalfNV, GLhandleARB, GLint, GLint64, GLintptr, GLintptrARB, GLint64EXT, GLshort, GLsizei, GLsizeiptr, GLsizeiptrARB, GLsync, GLubyte, GLuint, GLuint64, GLuint64EXT, GLushort, GLvoid, GLvdpauSurfaceNV};
 
-use crate::{call::Call, test::ScopedAllocator, gl_context::Context, region};
+use crate::{call::Call, test::ScopedAllocator, gl_context::Context, region, retracer::Callback};
 
 static DUMMY_CONTEXT: usize = 4000;
 static supportsARBShaderObjects: bool = false;
 static queryHandling: u8 = 0;
 static QUERY_RUN_AND_CHECK_RESULT: u8 = 2;
 static QUERY_SKIP: u8 = 0;
+static queryTolerance: usize = 0;
 //static GLint
 //_getActiveProgram(void);
 

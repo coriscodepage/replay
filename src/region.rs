@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
-use std::ops::{Add, Sub};
+use std::ops::{Add, Index, IndexMut, Sub};
 use std::ptr::null_mut;
 use std::sync::{Mutex, Once};
 
@@ -73,7 +73,7 @@ fn intersects((addr, region): (&usize, &Region), start: usize, size: usize) -> b
     it_start < stop && start < it_stop
 }
 
-pub fn add_region(address: usize, buffer: *mut u8, size: usize) {
+pub fn add_region(_: &Call, address: usize, buffer: *mut c_void, size: isize) {
     if address == 0 {
         panic!("Expected a pointer got a nullptr");
     }
@@ -95,7 +95,7 @@ pub fn add_region(address: usize, buffer: *mut u8, size: usize) {
     //     );
     // }
 
-    map.insert(address, Region::new(buffer, size));
+    map.insert(address, Region::new(buffer as *mut u8, size as usize));
 }
 
 pub fn del_region(address: usize) {
@@ -103,11 +103,11 @@ pub fn del_region(address: usize) {
     assert!(map.remove(&address).is_some());
 }
 
-pub fn del_region_by_pointer(ptr: *mut u8) {
+pub fn del_region_by_pointer(ptr: *mut c_void) {
     let mut map = region_map().borrow_mut();
     let addr = map
         .iter()
-        .find_map(|(k, region)| if region.buffer == ptr { Some(*k) } else { None });
+        .find_map(|(k, region)| if region.buffer == ( ptr as *mut u8 ) { Some(*k) } else { None });
     assert!(map.remove(&addr.unwrap()).is_some());
 }
 
@@ -141,7 +141,7 @@ pub fn lookup_address(address: usize, range: &mut Range) {
         let offset = address - key;
         assert!(offset < region.size);
 
-        range.ptr = unsafe { region.buffer.add(offset as usize) };
+        range.ptr = unsafe { region.buffer.add(offset) };
         range.len = region.size - offset;
         range.dims = region.dimensions;
         range.trace_pitch = region.trace_pitch;
@@ -213,7 +213,7 @@ pub fn to_range(value: &dyn Value, range: &mut Range) {
     }
 }
 
-pub fn to_pointer(value: &dyn Value, bind: bool) -> *mut u8 {
+pub fn to_pointer(value: &Box<dyn Value>, bind: bool) -> *mut usize {
     let mut range = Range::default();
     if let Some(_) = value.as_any().downcast_ref::<value_structure::None>() {
         Translator::new(bind, &mut range).apply(Translatable::None(value_structure::None {}));
@@ -228,7 +228,7 @@ pub fn to_pointer(value: &dyn Value, bind: bool) -> *mut u8 {
             bound: blob_type.bound,
         }));
     }
-    range.ptr
+    range.ptr as *mut usize
 }
 
 pub fn add_obj(call: &Call, value: &dyn Value, obj: *mut c_void) {
@@ -336,6 +336,26 @@ where
 
     pub fn iter(&self) -> impl Iterator<Item = (&T, &T)> {
         self.base.iter()
+    }
+}
+
+impl<T> Index<T> for Map<T>
+where 
+T: Ord + Copy + Add<Output = T> + Sub<Output = T>,
+{
+    type Output = T;
+    fn index(&self, index: T) -> &Self::Output {
+        &self.base[&index]
+    }
+}
+
+impl<T> IndexMut<T> for Map<T> 
+where
+    T: Ord + Copy + Add<Output = T> + Sub<Output = T>,
+{
+    
+    fn index_mut(&mut self, index: T) -> &mut Self::Output {
+        self.base.entry(index).or_insert(index)
     }
 }
 
