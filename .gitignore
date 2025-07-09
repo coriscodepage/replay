@@ -6,6 +6,8 @@ a.out
 *.code-workspace
 Cargo.lock
 *.json.gz
-/helpers/try.rs
-/helpers/__pycache__
-/helpers/specs/__pycache__
+helpers/specs/__pycache__
+helpers/__pycache__
+*.log
+*.json
+*.trace

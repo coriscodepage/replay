@@ -1,12 +1,14 @@
 use std::{collections::BTreeMap, error::Error, fmt::Display, panic::Location};
+use std::cell::RefCell;
+use std::rc::Rc;
 
-use crate::{call::Call, r#try::GlRetracer};
+use crate::{call::Call, gl_context::Context, r#try::GlRetracer};
 
 pub type Callback = fn(&mut GlRetracer, &mut Call);
-
-struct Entry {
-    name: String,
-    callback: Callback,
+ 
+pub(crate) struct Entry {
+    pub(crate) name: String,
+    pub(crate) callback: Callback,
 }
 
 #[derive(Debug)]
@@ -34,11 +36,30 @@ impl Error for RetracerError {}
 pub struct Retracer {
     map: BTreeMap<String, Callback>,
     callbacks: Vec<Option<Callback>>,
+    tracer: GlRetracer,
 }
 
+fn check_gl_error(operation: &str) {
+    unsafe {
+        let error = gl::GetError();
+        if error != gl::NO_ERROR {
+            let error_str = match error {
+                gl::INVALID_ENUM => "GL_INVALID_ENUM",
+                gl::INVALID_VALUE => "GL_INVALID_VALUE", 
+                gl::INVALID_OPERATION => "GL_INVALID_OPERATION",
+                gl::OUT_OF_MEMORY => "GL_OUT_OF_MEMORY",
+                gl::INVALID_FRAMEBUFFER_OPERATION => "GL_INVALID_FRAMEBUFFER_OPERATION",
+                _ => "Unknown error",
+            };
+            println!("OpenGL Error after {}: {} (0x{:x})", operation, error_str, error);
+        }
+    }
+}
+
+
 impl Retracer {
-    pub fn init() -> Self {
-        Self { map: BTreeMap::new(), callbacks: Vec::new() }
+    pub fn init(context: Rc<RefCell<Context>>) -> Self {
+        Self { map: BTreeMap::new(), callbacks: Vec::new(), tracer: GlRetracer::init(context)}
     }
 
     pub fn retrace(&mut self, call: &mut Call) -> Result<(), RetracerError>{
@@ -56,7 +77,8 @@ impl Retracer {
             self.callbacks[id] = callback;
         }
         if let Some(callback) = callback {
-            callback(call);
+            callback(&mut self.tracer, call);
+            check_gl_error(&call.sig.name);
             Ok(())
         }
         else {
@@ -64,7 +86,7 @@ impl Retracer {
         }
     }
 
-    fn add_calback(&mut self, entry: Entry) {
+    pub fn add_callback(&mut self, entry: Entry) {
         self.map.insert(entry.name, entry.callback);
     }
 

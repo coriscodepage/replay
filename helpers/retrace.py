@@ -53,7 +53,7 @@ def lookupHandle(handle, value, lval=False):
         if handle.name == "location" and lval == False:
             return "_location_map.get_mut(&%s).unwrap().lookup_uniform_location(%s)" % (key_name, value)
         else:
-            return "_%s_map[%s][%s]" % (handle.name, key_name, value)
+            return "_%s_map.get_mut(&%s).unwrap()[%s]" % (handle.name, key_name, value)
 
 
 class ValueAllocator(stdapi.Visitor):
@@ -74,7 +74,9 @@ class ValueAllocator(stdapi.Visitor):
         pass
 
     def visitArray(self, array, lvalue, rvalue):
-        if str(array.type).replace('const', '').replace('*', '').find("GLvoid") == -1:
+        if str(array.type).find("GLchar *") != -1:
+            print('    %s = _allocator.alloc_array::<*mut %s>(&%s);' % (lvalue, str(array.type).replace('const', '').replace('*', ''), rvalue))
+        elif str(array.type).replace('const', '').replace('*', '').find("GLvoid") == -1:
             print('    %s = _allocator.alloc_array::<%s>(&%s);' % (lvalue, str(array.type).replace('const', '').replace('*', ''), rvalue))
         else:
             print('    let %s = _allocator.alloc_array::<usize>(&%s);' % (lvalue, rvalue))
@@ -179,7 +181,7 @@ class ValueDeserializer(stdapi.Visitor, stdapi.ExpanderMixin):
 
         assert not self.insideStruct
 
-        print('    let %s = (%s).to_array().unwrap();' % (tmp, rvalue))
+        print('    let %s = (%s).to_array();' % (tmp, rvalue))
         print('    if let Some(%s) = %s {' % (tmp, tmp))
 
         length = '%s.values.len()' % (tmp,)
@@ -209,8 +211,8 @@ class ValueDeserializer(stdapi.Visitor, stdapi.ExpanderMixin):
         #    print('    }')
 
     def visitIntPointer(self, pointer, lvalue, rvalue):
-        if str(lvalue).find('indices') == -1:
-            print('    let %s = (%s).to_pointer().unwrap() as *mut c_void;' % (lvalue, rvalue))
+        if str(lvalue).find('indices[') == -1:
+            print('    let mut %s = (%s).to_pointer().unwrap() as *mut c_void;' % (lvalue, rvalue))
         else:
             print('            %s = (%s).to_pointer().unwrap() as usize;' % (lvalue, rvalue))
 
@@ -244,7 +246,9 @@ class ValueDeserializer(stdapi.Visitor, stdapi.ExpanderMixin):
         if alit in GLOB_ARRS and alit.find('self.') == -1:
             alit = 'self.' + alit
         if alit == "sync":
-            print('    %s = self._sync_map[sync as usize];' % (alit, ))
+            print('    %s = self._sync_map[sync as usize] as *mut c_void;' % (alit, ))
+        elif str(new_lvalue).find("_eglImageOES_map") != -1:
+            print('    let %s = self._eglImageOES_map[image as usize] as *mut c_void;' % (alit, ))
         else:
             print('    %s = %s;' % (alit, ('self.' if str(new_lvalue)[0] == '_' else '') + adit))
         if shaderObject:
@@ -254,8 +258,10 @@ class ValueDeserializer(stdapi.Visitor, stdapi.ExpanderMixin):
         print('    let %s = (%s).to_pointer().unwrap() as *mut c_void;' % (lvalue, rvalue))
     
     def visitString(self, string, lvalue, rvalue):
-        print('    let %s = (%s).to_string();' % (lvalue, rvalue))
-
+        if str(lvalue).find("string[") != -1 or str(lvalue).find("varyings[") != -1 or str(lvalue).find("strings[") != -1 or str(lvalue).find("path[") != -1:
+            print('    %s = (%s).to_string();' % (lvalue, rvalue))
+        else:
+            print('    let %s = (%s).to_string();' % (lvalue, rvalue))
     seq = 0
 
     insideStruct = 0
@@ -359,7 +365,7 @@ class SwizzledValueRegistrator(stdapi.Visitor, stdapi.ExpanderMixin):
     def visitLinearPointer(self, pointer, lvalue, rvalue):
         assert pointer.size is not None
         if pointer.size is not None:
-            print(r'    region::add_region(call, (%s).to_pointer().unwrap() as usize, %s, %s);' % (rvalue, lvalue, pointer.size))
+            print(r'    region::add_region(call, (%s).to_pointer().unwrap() as usize, %s as *mut c_void, %s);' % (rvalue, lvalue, pointer.size))
 
     def visitReference(self, reference, lvalue, rvalue):
         pass
@@ -377,7 +383,10 @@ class SwizzledValueRegistrator(stdapi.Visitor, stdapi.ExpanderMixin):
                 print('    %s = %s;' % (entry, lvalue))
                 print('}')
             else:
-                print("    %s = %s; " % (('self.' if str(entry)[0] == '_' else '') + str(entry).replace('reinterpret_cast<uintptr_t>(glretrace::getCurrentContext())', '&DUMMY_CONTEXT'), lvalue))
+                if str(entry) == "self._sync_map[_origResult]":
+                    print("    self._sync_map[_origResult as usize] = %s as usize; " % (lvalue, ))
+                else:
+                    print("    %s = %s; " % (('self.' if str(entry)[0] == '_' else '') + str(entry).replace('reinterpret_cast<uintptr_t>(glretrace::getCurrentContext())', '&DUMMY_CONTEXT'), lvalue))
             #if entry.startswith('_textureHandle_map') or entry.startswith('_imageHandle_map'):
             #    print('    if (%s != %s) {' % (rvalue, lvalue))
             #    print('        std::cout << "Bindless handle doesn\'t match, GPU failures ahead.\\n";')
@@ -388,8 +397,8 @@ class SwizzledValueRegistrator(stdapi.Visitor, stdapi.ExpanderMixin):
             #print('    }')
         else:
             i = '_h' + handle.tag
-            lvalue = "%s + %s" % (lvalue, i)
-            rvalue = "_origResult + %s" % (i,)
+            lvalue = "%s as u32 + %s as u32" % (lvalue, i)
+            rvalue = "_origResult as u32+ %s as u32" % (i,)
             entry = lookupHandle(handle, rvalue) 
             print('    for {i} in 0..{handle.range} {{'.format(**locals()))
             print('        {entry} = {lvalue};'.format(**locals()))
@@ -521,8 +530,13 @@ class Retracer:
                         print('    let %s: *mut %s;' % (arg.name, str(arg_type).replace('*', '').replace('void', 'c_void').strip()))
                     elif (str(arg_type).replace('*', '').strip() == "GLvoid"):
                         print('    let %s: *mut %s;' % (arg.name, str(arg_type).replace('*', '').replace('GLvoid', 'c_void').strip()))
+                    elif (str(arg_type) == "GLchar *"):
+                        print('    let %s: *mut GLchar;' % (arg.name, ))
+                    elif (str(arg_type) == "GLchar * *"):
+                        print('    let %s: &mut [*mut GLchar];' % (arg.name, ))
                     else:
                         print('    let %s: &mut [%s];' % (arg.name, str(arg_type).replace('*', '').strip()))
+                #print(arg_type)
             rvalue = 'call.arg(%u)' % (arg.index,)
             lvalue = arg.name
             try:
@@ -549,7 +563,7 @@ class Retracer:
                 except UnsupportedType:
                     print('    // XXX: %s' % arg.name)
         if function.type is not stdapi.Void:
-            rvalue = 'call.ret.unwrap()'
+            rvalue = 'call.ret.as_ref().unwrap()'
             lvalue = '_result'
             try:
                 self.regiterSwizzledValue(function.type, lvalue, rvalue)
@@ -725,6 +739,39 @@ class Retracer:
                     self.retraceInterfaceMethod(interface, method)
         print("""
     fn ignore(&mut self, call: &mut Call) {}
+""")
+        print("""
+    pub fn init (context: Context) -> Self {
+              Self {
+        context: context,
+        double_buffer: true,
+        _list_map: region::Map::new(),
+        _texture_map: region::Map::new(),
+        _query_map: region::Map::new(),
+        _buffer_map: region::Map::new(),
+        _program_map: region::Map::new(),
+        _shader_map: region::Map::new(),
+        _location_map: HashMap::new(),
+        _fence_map: region::Map::new(),
+        _sync_map: region::Map::new(),
+        _arrayAPPLE_map: region::Map::new(),
+        _textureHandle_map: region::Map::new(),
+        _sampler_map: region::Map::new(),
+        _imageHandle_map: region::Map::new(),
+        _feedback_map: region::Map::new(),
+        _framebuffer_map: region::Map::new(),
+        _renderbuffer_map: region::Map::new(),
+        _array_map: HashMap::new(),
+        _pipeline_map: region::Map::new(),
+        _handleARB_map: region::Map::new(),
+        _subroutine_map: HashMap::new(),
+        _eglImageOES_map: region::Map::new(),
+        _uniformBlock_map: HashMap::new(),
+        _programARB_map: region::Map::new(),
+        _fragmentShaderATI_map: region::Map::new(),
+        _region_map: region::Map::new(),
+    }
+}
 """)
         print("}")
         print()

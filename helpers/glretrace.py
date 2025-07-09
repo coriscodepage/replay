@@ -231,11 +231,11 @@ class GlRetracer(Retracer):
         if not self.pack_function_regex.match(function.name):
             return
 
-        print(r'    let _pack_buffer = 0;')
+        print(r'    let mut _pack_buffer = 0;')
         print(r'    if self.context.features("pixel_buffer_object") {')
-        print(r'        unsafe { gl::GetIntegerv(gl::PIXEL_PACK_BUFFER_BINDING, &_pack_buffer) };')
+        print(r'        unsafe { gl::GetIntegerv(gl::PIXEL_PACK_BUFFER_BINDING, &mut _pack_buffer as *mut i32) };')
         print(r'    }')
-        print(r'     let buffer = Vec::<u8>::new();')
+        print(r'     let mut buffer = Vec::<u8>::new();')
         print(r'    if _pack_buffer != 0 {')
         # if no pack buffer is bound we have to read back
         data_param_name = "pixels"
@@ -264,43 +264,43 @@ class GlRetracer(Retracer):
 
     def invokeFunction(self, function):
         if function.name == "glGetActiveUniformBlockName":
-            print('    let name_buf = vec![GLchar ;bufSize];')
-            print('    uniformBlockName = name_buf.data();')
+            print('    let name_buf = vec![0 as c_char ;bufSize as usize];')
+            print('    uniformBlockName = name_buf.as_mut_ptr();')
             print('    let traced_name = (call.arg(4)).to_string();')
-            print('    glretrace::mapUniformBlockName(program, (call.arg(1)).to_i32().unwrap(), traced_name, _uniformBlock_map);')
+            print('    glretrace::mapUniformBlockName(program, (call.arg(1)).to_i32().unwrap(), traced_name, self._uniformBlock_map);')
         if function.name == "glGetProgramResourceName":
-            print('    let name_buf = vec![GLchar ;bufSize];')
-            print('    name = name_buf.data();')
+            print('    let name_buf = vec![0 as c_char ;bufSize as usize];')
+            print('    name = name_buf.as_mut_ptr();')
             print('    let traced_name = (call.arg(5)).to_string();')
             print('    glretrace::trackResourceName(program, programInterface, index, traced_name);')
         if function.name == "glGetProgramResourceiv":
-            print('    glretrace::mapResourceLocation(program, programInterface, index, call.arg(4).to_array().unwrap(), call.arg(7).to_array().unwrap(), _location_map);')
+            print('    glretrace::mapResourceLocation(program, programInterface, index, call.arg(4).to_array().unwrap(), call.arg(7).to_array().unwrap(), self._location_map);')
         # Infer the drawable size from GL calls
         if function.name == "glViewport":
-            print('    glretrace::updateDrawable(x + width, y + height);')
+            print('    //glretrace::updateDrawable(x + width, y + height);')
         if function.name == "glViewportArrayv":
             # We are concerned about drawables so only care for the first viewport
             print('    if first == 0 && count > 0 {')
             print('        let x = _v[0];\nlet y = _v[1];\nlet w = _v[2];\nlet h = _v[3];')
-            print('        glretrace::updateDrawable(x + w, y + h);')
+            print('        //glretrace::updateDrawable(x + w, y + h);')
             print('    }')
         if function.name == "glViewportIndexedf":
             print('    if index == 0 {')
-            print('        glretrace::updateDrawable(x + w, y + h);')
+            print('        //glretrace::updateDrawable(x + w, y + h);')
             print('    }')
         if function.name == "glViewportIndexedfv":
             print('    if index == 0 {')
             print('        let x = _v[0];\nlet y = _v[1];\nlet w = _v[2];\nlet h = _v[3];')
-            print('        glretrace::updateDrawable(x + w, y + h);')
+            print('        //glretrace::updateDrawable(x + w, y + h);')
             print('    }')
         if function.name in ('glBlitFramebuffer', 'glBlitFramebufferEXT'):
             # Some applications do all their rendering in a framebuffer, and
             # then just blit to the drawable without ever calling glViewport.
-            print('    glretrace::updateDrawable(std::max(dstX0, dstX1), std::max(dstY0, dstY1));')
+            print('    //glretrace::updateDrawable(max(dstX0, dstX1), max(dstY0, dstY1));')
 
         if function.name == "glEnd":
             #print(r'    if (self.context) {')
-            print(r'    self.context.insideBeginEnd = false;')
+            print(r'    self.context.inside_begin_end = false;')
             #print(r'    }')
 
         if function.name == 'memcpy':
@@ -341,8 +341,8 @@ class GlRetracer(Retracer):
         if function.name in ('glDeleteBuffers', 'glDeleteBuffersARB'):
             print(r'    if self.context.features("ARB_direct_state_access") {')
             print(r'        for i in 0..n {')
-            print(r'            let buffer = buffers[i];')
-            print(r'            if buffer != 0 && unsafe{ gl::IsBuffer(buffer) }{')
+            print(r'            let buffer = buffers.wrapping_add(i as usize);')
+            print(r'            if !buffer.is_null() && unsafe{ gl::IsBuffer(*buffer) } != 0 {')
             print(r'                let ptr = ptr::null_mut() as *mut c_void;')
             print(r'                unsafe { gl::GetNamedBufferPointerv(buffers[i], gl::BUFFER_MAP_POINTER, &ptr) };')
             print(r'                if !ptr.is_null() {')
@@ -373,12 +373,12 @@ class GlRetracer(Retracer):
         # Only profile if not inside a list as the queries get inserted into list
         if function.name == 'glNewList':
             #print(r'    if (self.context) {')
-            print(r'    self.context.insideList = true;')
+            print(r'    self.context.inside_list = true;')
             #print(r'    }')
 
         if function.name == 'glEndList':
             #print(r'    if (self.context) {')
-            print(r'    self.context.insideList = false;')
+            print(r'    self.context.inside_list = false;')
             #print(r'    }')
 
         if function.name == 'glBegin' or \
@@ -438,15 +438,15 @@ class GlRetracer(Retracer):
             Retracer.invokeFunction(self, function)
             #print(r'    }')
         elif function.name == 'glClientWaitSync':
-            print(r'    _result = region::client_wait_sync(call, sync, flags, timeout);')
+            print(r'    let _result = region::client_wait_sync(call, sync, flags, timeout);')
             print()
         elif function.name == 'glGetSynciv':
             print(r'    if pname == gl::SYNC_STATUS &&')
             print(r'        bufSize >= 1 &&')
-            print(r'        values != NULL &&')
-            print(r'        call.arg(4)[0].to_i32().unwrap() == gl::SIGNALED {')
+            #print(r'        values != NULL &&')
+            print(r'        (*call.arg(4).to_array().unwrap())[0].to_u32().unwrap() == gl::SIGNALED {')
             print(r'        // Fence was signalled, so ensure it happened here')
-            print(r'        region::block_on_fence(call, sync, gl::SYNC_FLUSH_COMMANDS_BIT);')
+            print(r'        region::block_on_fence(call, sync as GLsync, gl::SYNC_FLUSH_COMMANDS_BIT);')
             print(r'    }')
         else:
             Retracer.invokeFunction(self, function)
@@ -456,17 +456,17 @@ class GlRetracer(Retracer):
         # GL errors.  See also https://github.com/apitrace/apitrace/issues/679
         if function.name in ('glUseProgram'):
             #print(r'    if (self.context) {')
-            print(r'        self.context.currentUserProgram = call.arg(0).to_u32().unwrap();')
-            print(r'        self.context.currentProgram = _glGetInteger(GL_CURRENT_PROGRAM);')
+            print(r'        self.context.current_user_program = call.arg(0).to_u32().unwrap();')
+            print(r'        self.context.current_program = _glGetInteger(gl::CURRENT_PROGRAM) as u32;')
             #print(r'    }')
         if function.name in ('glUseProgramObjectARB',):
             #print(r'    if (self.context) {')
-            print(r'        self.context.currentUserProgram = call.arg(0).to_u32().unwrap();')
-            print(r'        self.context.currentProgram = glGetHandleARB(GL_PROGRAM_OBJECT_ARB);')
+            print(r'        self.context.current_user_program = call.arg(0).to_u32().unwrap();')
+            print(r'        //self.context.current_program = glGetHandleARB(gl::PROGRAM_OBJECT_ARB) as u32;')
             #print(r'    }')
         if function.name in ('glBindProgramPipeline', 'glBindProgramPipelineEXT'):
             #print(r'    if (self.context) {')
-            print(r'        self.context.currentPipeline = pipeline;')
+            print(r'        self.context.current_pipeline = pipeline;')
             #print(r'    }')
 
         # Ensure this context flushes before switching to another thread to
@@ -501,12 +501,13 @@ class GlRetracer(Retracer):
             #print('    if (retrace::debug > 0 && self.context && !self.context->insideBeginEnd) {')
             #print('        glretrace::checkGlError(call);')
             if function.name in ('glProgramStringARB', 'glLoadProgramNV'):
-                print(r'        let error_position: GLint = -1;')
-                print(r'        unsafe { gl::GetIntegerv(gl::PIXEL_PACK_BUFFER_BINDING, &error_position) };')
-                print(r'        if error_position != -1 {')
-                print(r'            let error_string = unsafe { gl::GetString(gl::PROGRAM_ERROR_STRING_ARB) };')
-                print(r'            println!("error in position {}: {}", error_position, error_string);')
-                print(r'        }')
+                pass
+                #print(r'        let error_position: GLint = -1;')
+                #print(r'        unsafe { gl::GetIntegerv(gl::PIXEL_PACK_BUFFER_BINDING, &error_position) };')
+                #print(r'        if error_position != -1 {')
+                #print(r'            let error_string = unsafe { gl::GetString(gl::PROGRAM_ERROR_STRING_ARB) };')
+                #print(r'            println!("error in position {}: {}", error_position, error_string);')
+                #print(r'        }')
             if function.name == 'glCompileShader':
                 print(r'        let compile_status = 0;')
                 print(r'        unsafe { gl::GetShaderiv(shader, gl::COMPILE_STATUS, &compile_status) };')
@@ -576,12 +577,12 @@ class GlRetracer(Retracer):
                 #print(r'        }')
                 pass
             if function.name in ('glGetAttribLocation', 'glGetAttribLocationARB'):
-                print(r'    let _origResult = call.ret.to_i32().unwrap();')
+                print(r'    let _origResult = call.ret.as_ref().unwrap().to_i32().unwrap();')
                 #print(r'    if (_result != _origResult) {')
                 #print(r'        retrace::warning(call) << "vertex attrib location mismatch " << _origResult << " -> " << _result << "\n";')
                 #print(r'    }')
             if function.name in ('glCheckFramebufferStatus', 'glCheckFramebufferStatusEXT', 'glCheckNamedFramebufferStatus', 'glCheckNamedFramebufferStatusEXT'):
-                print(r'    let _origResult = call.ret.to_i32().unwrap();')
+                print(r'    let _origResult = call.ret.as_ref().unwrap().to_i32().unwrap();')
                 #print(r'    if (_origResult == GL_FRAMEBUFFER_COMPLETE &&')
                 #print(r'        _result != GL_FRAMEBUFFER_COMPLETE) {')
                 #print(r'        retrace::warning(call) << "incomplete framebuffer (" << glstate::enumToString(_result) << ")\n";')
@@ -610,7 +611,7 @@ class GlRetracer(Retracer):
 
     def extractArg(self, function, arg, arg_type, lvalue, rvalue):
         if function.name in self.array_pointer_function_names and arg.name == 'pointer':
-            print('    %s = region::to_pointer(%s, true) as *mut c_void;' % (lvalue, rvalue))
+            print('    let mut %s = region::to_pointer(%s, true) as *mut c_void;' % (lvalue, rvalue))
             return
 
         if self.draw_elements_function_regex.match(function.name) and arg.name == 'indices' or\
@@ -622,7 +623,10 @@ class GlRetracer(Retracer):
         # object.
         if self.pack_function_regex.match(function.name) and arg.output:
             assert isinstance(arg_type, (stdapi.Pointer, stdapi.Array, stdapi.Blob, stdapi.Opaque))
-            print('    let %s = (%s).to_pointer();' % (lvalue, rvalue))
+            if str(lvalue) == "pixels" or str(lvalue) == "data":
+                print('    let mut %s = (%s).to_pointer().unwrap();' % (lvalue, rvalue))
+            else:
+                print('    let %s = (%s).to_pointer();' % (lvalue, rvalue))
             return
         if function.name.startswith('glGetQueryObject') and arg.output:
             pointer_type = "%s" % (arg_type)
@@ -667,16 +671,18 @@ class GlRetracer(Retracer):
 
         # These parameters are referred beyond the call life-time
         # TODO: Replace ad-hoc solution for bindable parameters with general one
-        if function.name in ('glFeedbackBuffer', 'glSelectBuffer') and arg.output:
-            print('    _allocator.bind(%s);' % arg.name)
+        #if function.name in ('glFeedbackBuffer', 'glSelectBuffer') and arg.output:
+        #    print('    _allocator.bind(%s);' % arg.name)
 
 
 
 if __name__ == '__main__':
     print(r'''
 
-use std::{collections::HashMap, ffi::c_void, ptr};
-          
+use std::{collections::HashMap, ffi::c_void, ptr, cmp::max};
+
+use libc::c_char;
+
 use  gl::types::{GLbitfield, GLboolean, GLbyte, GLchar, GLcharARB, GLclampd, GLclampf, GLclampx, GLdouble, GLeglImageOES, GLenum, GLfixed, GLfloat, GLhalfNV, GLhandleARB, GLint, GLint64, GLintptr, GLintptrARB, GLint64EXT, GLshort, GLsizei, GLsizeiptr, GLsizeiptrARB, GLsync, GLubyte, GLuint, GLuint64, GLuint64EXT, GLushort, GLvoid, GLvdpauSurfaceNV};
 
 use crate::{call::Call, test::ScopedAllocator, gl_context::Context, region, retracer::Callback};
@@ -744,4 +750,10 @@ _validateActiveProgram(trace::Call &call)
     
 }
 */
+          
+fn _glGetInteger(pname: GLenum) -> GLint {
+    let mut param: GLint = 0;
+    unsafe { gl::GetIntegerv(pname, &mut param); };
+    return param;
+}
 ''')

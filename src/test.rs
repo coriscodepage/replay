@@ -1,4 +1,4 @@
-use std::{error::Error, ffi::c_void, ptr::{self, null_mut}, rc::Rc, time::Duration};
+use std::{cell::RefCell, error::Error, ffi::c_void, ptr::{self, null_mut}, rc::Rc, time::Duration};
 
 use gl::types::{GLenum, GLint};
 use sdl3::{
@@ -7,7 +7,7 @@ use sdl3::{
     video::{SwapInterval, Window},
 };
 
-use crate::{call::Call, gl_context, retracer::Callback, value_structure::{Array, Value}};
+use crate::{call::Call, gl_context,  value_structure::{Array, Value},};//retracer::Callback,};
 use bumpalo::Bump;
 
 pub struct ScopedAllocator {
@@ -25,12 +25,21 @@ impl ScopedAllocator {
                 let num_elems = array.values.len();
                 self.bump.alloc_slice_fill_default::<T>(num_elems)
             }
-           None => panic!(""),//TODO: make this better,
+           None => self.bump.alloc_slice_fill_default::<T>(1),//TODO: make this better,
             _ => {
                 panic!("alloc_array: unexpected value type");
             }
         }
     }
+    pub fn bind<T>(&self, ptr: *mut T) {
+    unsafe {
+    if !ptr.is_null() {
+        let header_ptr = (ptr as *mut usize).offset(-1);
+        *header_ptr |= 1;
+    }
+}
+}
+
 }
 
 pub struct SdlContext {
@@ -38,12 +47,12 @@ pub struct SdlContext {
     pub window: Window,
     pub gl_context: Rc<sdl3::video::GLContext>,
     pub gl: (),
-    pub event_pump: EventPump,
+    pub event_pump: Option<Rc<RefCell<EventPump>>>,
 }
 
 impl SdlContext {
-    pub fn new(title: &str, width: u32, height: u32) -> Result<Self, Box<dyn Error>> {
-        let sdl = sdl3::init()?;
+    pub fn new(title: &str, width: u32, height: u32, sdl: Sdl) -> Result<Self, Box<dyn Error>> {
+        
         let video_sb = sdl.video()?;
         let gl_attrs = video_sb.gl_attr();
         gl_attrs.set_context_profile(sdl3::video::GLProfile::Core);
@@ -61,22 +70,28 @@ impl SdlContext {
                 .map_or(std::ptr::null(), |p| p as *const c_void)
         });
 
-        window
-            .subsystem()
-            .gl_set_swap_interval(SwapInterval::VSync)?;
-        let event_pump = sdl.event_pump()?;
+        /*window
+            .subsystem()?;
+            .gl_set_swap_interval(SwapInterval::VSync)?;*/
+        //let event_pump = sdl.event_pump()?;
         Ok(Self {
             sdl,
             window,
             gl_context: Rc::new(gl_context),
             gl,
-            event_pump,
+            event_pump: None,
         })
+    }
+    pub fn get_event_pump(&mut self) -> Result<Rc<RefCell<EventPump>>, Box<dyn Error>> {
+        let pump = Rc::new(RefCell::new(self.sdl.event_pump()?));
+        self.event_pump = Some(pump.clone());
+        Ok(pump)
     }
 }
 
+/*
 pub fn test() {
-    let mut sdl_ctx = SdlContext::new("Okienko :3", 800, 600).unwrap();
+    let mut sdl_ctx = SdlContext::new("Okienko :3", 800, 600, sdl3::init().unwrap()).unwrap();
     unsafe { gl::Viewport(0, 0, 800, 600) };
     let mut glon = gl_context::Context::new(Rc::clone(&sdl_ctx.gl_context));
     sdl_ctx.window.gl_make_current(&sdl_ctx.gl_context).unwrap();
@@ -96,7 +111,7 @@ pub fn test() {
         std::thread::sleep(Duration::from_millis(16));
     }
 }
-
+*/
 /*
 struct GlRetrace_ {
     context: SdlContext,

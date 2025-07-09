@@ -1,8 +1,9 @@
 use std::cell::RefCell;
+use std::cmp::min;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
 use std::ops::{Add, Index, IndexMut, Sub};
-use std::ptr::null_mut;
+use std::ptr::{self, null_mut};
 use std::sync::{Mutex, Once};
 
 use crate::call::Call;
@@ -73,27 +74,12 @@ fn intersects((addr, region): (&usize, &Region), start: usize, size: usize) -> b
     it_start < stop && start < it_stop
 }
 
-pub fn add_region(_: &Call, address: usize, buffer: *mut c_void, size: isize) {
+pub fn add_region(_: &Call, address: usize, buffer: *mut c_void, size: i32) {
     if address == 0 {
         panic!("Expected a pointer got a nullptr");
     }
 
     let mut map = region_map().borrow_mut();
-
-    // let overlaps: Vec<_> = map
-    //     .range(..=address + size - 1)
-    //     .filter(|(k, _)| intersects((*k, &map[k]), address, size))
-    //     .collect();
-
-    // for (addr, reg) in overlaps {
-    //     eprintln!(
-    //         "warning: new region 0x{:x}-0x{:x} intersects existing 0x{:x}-0x{:x}",
-    //         address,
-    //         address + size,
-    //         addr,
-    //         addr + reg.size
-    //     );
-    // }
 
     map.insert(address, Region::new(buffer as *mut u8, size as usize));
 }
@@ -122,7 +108,7 @@ pub fn set_region_pitch(address: usize, dims: u32, trace_pitch: i32, real_pitch:
 }
 
 pub fn lookup_region_key(address: usize) -> Option<usize> {
-    let map = region_map().borrow_mut();
+    let map = region_map().borrow();
     let mut keys: Vec<&usize> = map.keys().collect();
     keys.sort();
 
@@ -135,8 +121,9 @@ pub fn lookup_region_key(address: usize) -> Option<usize> {
 }
 
 pub fn lookup_address(address: usize, range: &mut Range) {
-    let map = region_map().borrow_mut();
+    
     if let Some(key) = lookup_region_key(address) {
+        let map = region_map().borrow_mut();
         let region = &map[&key];
         let offset = address - key;
         assert!(offset < region.size);
@@ -293,6 +280,10 @@ pub fn block_on_fence(call: &Call, sync: gl::types::GLsync, flags: gl::types::GL
     result
 }
 
+pub fn client_wait_sync() {
+    
+}
+
 #[derive(Debug, Default)]
 pub struct Map<T>
 where
@@ -360,3 +351,63 @@ where
 }
 
 pub fn frame_complete(call: &Call) {}
+
+pub fn retrace_memcpy(call: &mut Call) {
+    let mut dest_range = Range::default();
+    let mut src_range = Range::default();
+    
+    to_range(call.arg(0).as_mut(), &mut dest_range);
+    to_range(call.arg(1).as_mut(), &mut src_range);
+
+    let n = call.arg(2).to_u32().unwrap_or(0);
+
+    if dest_range.ptr.is_null() || src_range.ptr.is_null() || n == 0 {
+        return;
+    }
+
+    // Swizzled source is not supported
+    assert_eq!(src_range.dims, 0);
+
+    assert!(dest_range.dims <= 2);
+    if dest_range.dims == 2 && dest_range.trace_pitch != dest_range.real_pitch {
+        let src_pitch = dest_range.trace_pitch as usize;
+        let dest_pitch = dest_range.real_pitch as usize;
+
+
+        let mut dest_offset = 0;
+        let mut src_offset = 0;
+        let mut width = min(dest_pitch, src_pitch);
+
+        while dest_offset + width <= dest_range.len && src_offset + width <= src_range.len {
+            unsafe {
+                ptr::copy_nonoverlapping(
+                    src_range.ptr.add(src_offset),
+                    dest_range.ptr.add(dest_offset),
+                    width,
+                );
+            }
+            dest_offset += dest_pitch;
+            src_offset += src_pitch;
+        }
+
+        if dest_offset < dest_range.len && src_offset < src_range.len {
+            width = min(dest_range.len - dest_offset, src_range.len - src_offset);
+            unsafe {
+                ptr::copy_nonoverlapping(
+                    src_range.ptr.add(src_offset),
+                    dest_range.ptr.add(dest_offset),
+                    width,
+                );
+            }
+        }
+
+        return;
+    }
+
+    let mut n2 = min(n as usize, dest_range.len);
+    n2 = min(n as usize, src_range.len);
+
+    unsafe {
+        ptr::copy_nonoverlapping(src_range.ptr, dest_range.ptr, n2);
+    }
+}

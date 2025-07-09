@@ -8,6 +8,8 @@ use std::{
     string::FromUtf8Error,
 };
 
+use std::cmp::max;
+
 use snap::raw::Decoder;
 
 use crate::trace;
@@ -196,7 +198,8 @@ impl SnappyFile {
 
     pub fn read_type<T: Sized>(&mut self) -> Result<T, SnappyError> {
         let mut tmp = MaybeUninit::<T>::uninit();
-        let mut buffer = vec![0u8; size_of::<T>()];
+	    //println!("Allocating read_type::<{}> with size {}", std::any::type_name::<T>(), size_of::<T>());
+        let mut buffer = vec![0u8; max(size_of::<T>(),1)];
         self.read_bytes(&mut buffer)?;
         unsafe {
             std::ptr::copy_nonoverlapping(

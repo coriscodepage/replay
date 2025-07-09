@@ -1,10 +1,14 @@
-use std::{fmt::Debug, os::raw::c_void, rc::Rc, ffi::CString};
-
+use std::{cell::{RefCell, UnsafeCell}, collections::LinkedList, ffi::CString, fmt::Debug, ops::Index, os::raw::c_void, ptr::NonNull, rc::Rc, sync::{Mutex, OnceLock, RwLock}};
+use std::thread_local;
 use libc::c_char;
 
 use crate::signatures;
 
 use std::any::Any;
+
+thread_local! {
+static LEAKED_BLOBS:   RefCell<LinkedList<NonNull<Blob>>> = RefCell::new(LinkedList::new());
+}
 
 pub trait Value: Debug + Any {
     fn to_bool(&self) -> Option<bool>;
@@ -39,11 +43,11 @@ impl Value for None {
     }
 
     fn to_array(&self) -> Option<&Array> {
-        todo!()
+       None
     }
 
     fn to_pointer(&self) -> Option<*mut c_void> {
-        todo!()
+        Some(std::ptr::null_mut())
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -282,7 +286,7 @@ impl Value for VString {
         None
     }
     fn to_array(&self) -> Option<&Array> {
-        todo!()
+        None
     }
 
     fn to_pointer(&self) -> Option<*mut c_void> {
@@ -293,7 +297,9 @@ impl Value for VString {
         self
     }
     fn to_string(&self) -> *mut c_char {
-        CString::new(self.value.clone()).unwrap().into_raw()
+        let mut val = self.value.clone();
+        //val.push('\0');
+        CString::new(val).unwrap().into_raw()
     }
 }
 
@@ -379,6 +385,14 @@ impl Array {
     }
 }
 
+impl Index<usize> for Array {
+    type Output = Box<dyn Value>;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        self.values.get(index).unwrap()
+    }
+}
+
 #[derive(Debug)]
 pub struct Enum {
     pub sig: Rc<signatures::EnumSignature>,
@@ -390,7 +404,7 @@ impl Value for Enum {
         todo!()
     }
     fn to_u32(&self) -> Option<u32> {
-        todo!()
+        Some(self.value as u32)
     }
     fn to_f32(&self) -> Option<f32> {
         todo!()
@@ -399,7 +413,7 @@ impl Value for Enum {
         todo!()
     }
     fn to_i32(&self) -> Option<i32> {
-        todo!()
+        Some(self.value as i32)
     }
     fn to_array(&self) -> Option<&Array> {
         todo!()
@@ -468,7 +482,7 @@ impl Value for Bitmask {
         todo!()
     }
     fn to_u32(&self) -> Option<u32> {
-        todo!()
+        Some(self.value as u32)
     }
     fn to_f32(&self) -> Option<f32> {
         todo!()
@@ -496,7 +510,7 @@ impl Value for Bitmask {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Blob {
     pub size: usize,
     pub buffer: Vec<u8>,
@@ -524,7 +538,20 @@ impl Value for Blob {
     }
 
     fn to_pointer(&self) -> Option<*mut c_void> {
-        Some(self.buffer.as_ptr() as *mut c_void)
+        if self.bound {
+            let boxed_self = Box::new(self.clone());
+            let raw_ptr = Box::into_raw(boxed_self);
+            let nonnull = unsafe { NonNull::new_unchecked(raw_ptr) };
+            LEAKED_BLOBS.with(|blobs| {
+                blobs.borrow_mut().push_back(nonnull);
+            });
+            //leaked.write().unwrap().push_front(raw_ptr);
+            Some(nonnull.as_ptr() as *mut c_void)
+        }
+        else {
+            Some(self.buffer.as_ptr() as *mut c_void)
+        }
+        
     }
 
     fn as_any(&self) -> &dyn Any {
